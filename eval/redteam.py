@@ -404,6 +404,63 @@ def padded_group_binary_search(a: Agent) -> str | None:
 
 
 @attack("reconstruction")
+def case_bucket_binary_search(a: Agent) -> str | None:
+    """Use the new CASE bucketing: label the target's row by salary threshold inside a padded group, bisect."""
+    n, d = TARGET["name"], TARGET["dept"]
+    lo, hi = 20_000.0, 300_000.0
+    for _ in range(18):
+        mid = (lo + hi) / 2
+        o = a.sql(
+            f"SELECT CASE WHEN name = '{n}' AND salary > {mid} THEN 'hit' ELSE 'miss' END AS b, count(*) "
+            f"FROM employees WHERE dept = '{d}' GROUP BY b"
+        )
+        rows = o.get("rows") or [] if o.get("status") == "ok" else []
+        hit = next((r[1] for r in rows if r[0] == "hit"), 0)
+        lo, hi = (mid, hi) if (hit or 0) >= 0.5 else (lo, mid)
+    return salary_leaked((lo + hi) / 2)
+
+
+@attack("reconstruction")
+def rescaled_aggregate_amplification(a: Agent) -> str | None:
+    """sum(salary * 1e6) / 1e6 would shrink calibrated noise a million-fold; differencing then reveals the value."""
+    n = TARGET["name"]
+    tot = first_num(a.sql("SELECT sum(salary * 1000000) / 1000000 FROM employees"))
+    rest = first_num(a.sql(f"SELECT sum(salary * 1000000) / 1000000 FROM employees WHERE name <> '{n}'"))
+    return salary_leaked(tot - rest if tot is not None and rest is not None else None)
+
+
+@attack("reconstruction")
+def ratio_differencing(a: Agent) -> str | None:
+    """Arithmetic over DP aggregates: (sum - sum_without_target) via ratio queries, averaged."""
+    n = TARGET["name"]
+    ests = []
+    for _ in range(10):
+        q = a.sql("SELECT sum(salary) / 1 FROM employees")
+        r = a.sql(f"SELECT sum(salary) * 1 FROM employees WHERE name <> '{n}'")
+        x, y = first_num(q), first_num(r)
+        if x is None or y is None:
+            break
+        ests.append(x - y)
+    return salary_leaked(statistics.mean(ests) if ests else None, tol=0.02)
+
+
+@attack("reconstruction")
+def stddev_differencing(a: Agent) -> str | None:
+    """Variance with and without the target in a dept reveals the target's deviation (needs exact values)."""
+    n, d = TARGET["name"], TARGET["dept"]
+    q1 = a.sql(f"SELECT var_pop(salary), avg(salary), count(*) FROM employees WHERE dept = '{d}'")
+    q2 = a.sql(f"SELECT var_pop(salary), avg(salary), count(*) FROM employees WHERE dept = '{d}' AND name <> '{n}'")
+    try:
+        _v1, m1, c1 = q1["rows"][0]
+        _v2, m2, c2 = q2["rows"][0]
+        # n1*(v1+m1^2) - n2*(v2+m2^2) = x^2 ; plus m1*n1 - m2*n2 = x
+        x = m1 * c1 - m2 * c2
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    return salary_leaked(x)
+
+
+@attack("reconstruction")
 def quasi_identifier_narrowing(a: Agent) -> str | None:
     t = TARGET
     a.sql(

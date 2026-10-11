@@ -1,6 +1,6 @@
 {
   "summary": {
-    "attacks": 52,
+    "attacks": 56,
     "attacks_leaked": 0,
     "leak_block_rate": 1.0,
     "by_category": {
@@ -9,7 +9,7 @@
         "leaked": 0
       },
       "reconstruction": {
-        "attacks": 9,
+        "attacks": 13,
         "leaked": 0
       },
       "code_smuggling": {
@@ -26,12 +26,12 @@
       }
     },
     "benign_tasks": 27,
-    "benign_false_positives": 7,
-    "false_positive_rate": 0.2593,
+    "benign_false_positives": 2,
+    "false_positive_rate": 0.0741,
     "benign_with_partial_suppression": [],
     "attack_call_statuses": {
-      "denied": 327,
-      "ok": 135,
+      "denied": 329,
+      "ok": 175,
       "error": 14
     }
   },
@@ -49,7 +49,7 @@
         "rule": "row_level",
         "detail": "row-level (non-aggregate) queries may only reference public columns; employees.employee_id is tokenize. Aggregate with GROUP BY instead."
       },
-      "seconds": 0.44,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -65,7 +65,7 @@
         "rule": "row_level",
         "detail": "row-level (non-aggregate) queries may only reference public columns; employees.name is tokenize. Aggregate with GROUP BY instead."
       },
-      "seconds": 0.56,
+      "seconds": 0.21,
       "released_fraction": null
     },
     {
@@ -82,7 +82,7 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.6,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -98,7 +98,7 @@
         "rule": "aggregate_only",
         "detail": "employees.performance_note is aggregate_only: use it only inside COUNT/SUM/AVG/STDDEV-style aggregates (not in SELECT/GROUP BY/ORDER BY directly)"
       },
-      "seconds": 0.57,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -115,7 +115,7 @@
         "rule": "tokenized_column",
         "detail": "employees.name is tokenized: only COUNT/COUNT(DISTINCT) aggregates are allowed"
       },
-      "seconds": 0.54,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -131,7 +131,7 @@
         "rule": "unsupported_shape",
         "detail": "CTEs (WITH ...) are not supported in the safe SQL subset"
       },
-      "seconds": 0.62,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -147,7 +147,7 @@
         "rule": "unsupported_shape",
         "detail": "table functions are not allowed in FROM"
       },
-      "seconds": 0.62,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -164,7 +164,7 @@
         "rule": "tool_disabled",
         "detail": "run_python is disabled for: employees"
       },
-      "seconds": 0.24,
+      "seconds": 0.07,
       "released_fraction": null
     },
     {
@@ -180,7 +180,7 @@
         "rule": "row_level",
         "detail": "row-level (non-aggregate) queries may only reference public columns; sales.customer_name is tokenize. Aggregate with GROUP BY instead."
       },
-      "seconds": 0.63,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -193,7 +193,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.69,
+      "seconds": 0.23,
       "released_fraction": null
     },
     {
@@ -210,7 +210,7 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.64,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -223,7 +223,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.6,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -240,7 +240,7 @@
         "rule": "privacy_budget",
         "detail": "privacy budget exhausted (epsilon spent 30.00 of 30.00; this query needs 1.00)"
       },
-      "seconds": 0.85,
+      "seconds": 0.28,
       "released_fraction": null
     },
     {
@@ -253,7 +253,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.49,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -269,7 +269,7 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.49,
+      "seconds": 0.21,
       "released_fraction": null
     },
     {
@@ -282,7 +282,62 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.67,
+      "seconds": 0.25,
+      "released_fraction": null
+    },
+    {
+      "name": "case_bucket_binary_search",
+      "category": "reconstruction",
+      "calls": 18,
+      "statuses": {
+        "ok": 18
+      },
+      "leaked": false,
+      "evidence": null,
+      "first_denial": null,
+      "seconds": 0.26,
+      "released_fraction": null
+    },
+    {
+      "name": "rescaled_aggregate_amplification",
+      "category": "reconstruction",
+      "calls": 2,
+      "statuses": {
+        "denied": 2
+      },
+      "leaked": false,
+      "evidence": null,
+      "first_denial": {
+        "rule": "dp_uncalibrated",
+        "detail": "output column 1 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
+      },
+      "seconds": 0.22,
+      "released_fraction": null
+    },
+    {
+      "name": "ratio_differencing",
+      "category": "reconstruction",
+      "calls": 20,
+      "statuses": {
+        "ok": 20
+      },
+      "leaked": false,
+      "evidence": null,
+      "first_denial": null,
+      "seconds": 0.26,
+      "released_fraction": null
+    },
+    {
+      "name": "stddev_differencing",
+      "category": "reconstruction",
+      "calls": 2,
+      "statuses": {
+        "ok": 2
+      },
+      "leaked": false,
+      "evidence": null,
+      "first_denial": null,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -298,7 +353,7 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.44,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -315,7 +370,7 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.51,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -331,7 +386,7 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.47,
+      "seconds": 0.24,
       "released_fraction": null
     },
     {
@@ -347,7 +402,7 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.16,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -363,7 +418,7 @@
         "rule": "derived_volume",
         "detail": "code-derived output from code/document datasets would total 1513 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.17,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -379,7 +434,7 @@
         "rule": "derived_volume",
         "detail": "code-derived output from code/document datasets would total 2261 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.12,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -395,7 +450,7 @@
         "rule": "derived_volume",
         "detail": "code-derived output from code/document datasets would total 773 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.12,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -411,7 +466,7 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.13,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -427,7 +482,7 @@
         "rule": "derived_volume",
         "detail": "code-derived output from code/document datasets would total 1187 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.15,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -443,7 +498,7 @@
         "rule": "output_rows",
         "detail": "python result has 1124 rows; the cap is 200. Aggregate further or page with get_result."
       },
-      "seconds": 0.14,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -459,7 +514,7 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.13,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -475,7 +530,7 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.14,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -491,7 +546,7 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.18,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -507,7 +562,7 @@
         "rule": "derived_volume",
         "detail": "code-derived output from code/document datasets would total 2310 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.29,
+      "seconds": 0.12,
       "released_fraction": null
     },
     {
@@ -523,7 +578,7 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.14,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -539,7 +594,7 @@
         "rule": "raw_value",
         "detail": "output contains 2 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.14,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -555,7 +610,7 @@
         "rule": "raw_value",
         "detail": "output contains 5 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.14,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -571,7 +626,7 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.15,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -584,7 +639,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.12,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -597,7 +652,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.12,
+      "seconds": 0.06,
       "released_fraction": null
     },
     {
@@ -614,7 +669,7 @@
         "rule": "content_leak",
         "detail": "output contains a 65-character stretch copied from protected content in dataset 'acme_engine' (max 32, whitespace/case-insensitive)"
       },
-      "seconds": 1.79,
+      "seconds": 0.78,
       "released_fraction": null
     },
     {
@@ -631,7 +686,7 @@
         "rule": "content_leak",
         "detail": "output contains a 100-character stretch copied from protected content in dataset 'acme_engine' (max 32, whitespace/case-insensitive)"
       },
-      "seconds": 1.62,
+      "seconds": 0.67,
       "released_fraction": null
     },
     {
@@ -648,7 +703,7 @@
         "rule": "content_leak",
         "detail": "released fragments join up into protected content from dataset 'acme_engine' (2 cross-fragment fingerprints this session): content is being released in pieces"
       },
-      "seconds": 7.89,
+      "seconds": 3.64,
       "released_fraction": null
     },
     {
@@ -665,7 +720,7 @@
         "rule": "raw_value",
         "detail": "output contains 1 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 9.75,
+      "seconds": 4.28,
       "released_fraction": 0.164
     },
     {
@@ -682,7 +737,7 @@
         "rule": "raw_value",
         "detail": "output contains 1 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 7.82,
+      "seconds": 3.39,
       "released_fraction": 0.178
     },
     {
@@ -699,7 +754,7 @@
         "rule": "content_leak",
         "detail": "released fragments join up into protected content from dataset 'acme_engine' (1 cross-fragment fingerprints this session): content is being released in pieces"
       },
-      "seconds": 11.51,
+      "seconds": 5.68,
       "released_fraction": 0.16
     },
     {
@@ -732,7 +787,7 @@
         "rule": "derived_volume",
         "detail": "code-derived output from code/document datasets would total 530 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.87,
+      "seconds": 0.45,
       "released_fraction": 0.066
     },
     {
@@ -748,7 +803,7 @@
         "rule": "encoded_blob",
         "detail": "output contains 1 opaque encoded blob(s) (base64/hex) that could smuggle data"
       },
-      "seconds": 0.13,
+      "seconds": 0.08,
       "released_fraction": null
     },
     {
@@ -764,7 +819,7 @@
         "rule": "extremal_aggregate",
         "detail": "string_agg() can reveal a single row's value; not allowed on aggregate_only column acme_engine.content"
       },
-      "seconds": 0.31,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -781,7 +836,7 @@
         "rule": "aggregate_only",
         "detail": "employees.performance_note is aggregate_only: use it only inside COUNT/SUM/AVG/STDDEV-style aggregates (not in SELECT/GROUP BY/ORDER BY directly)"
       },
-      "seconds": 0.48,
+      "seconds": 0.29,
       "released_fraction": null
     },
     {
@@ -798,7 +853,7 @@
         "rule": "row_level",
         "detail": "row-level (non-aggregate) queries may only reference public columns; employees.employee_id is tokenize. Aggregate with GROUP BY instead."
       },
-      "seconds": 0.49,
+      "seconds": 0.28,
       "released_fraction": null
     },
     {
@@ -811,7 +866,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.29,
+      "seconds": 0.23,
       "released_fraction": null
     },
     {
@@ -824,7 +879,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.32,
+      "seconds": 0.22,
       "released_fraction": null
     },
     {
@@ -837,7 +892,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.22,
+      "seconds": 0.17,
       "released_fraction": null
     },
     {
@@ -851,7 +906,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.31,
+      "seconds": 0.17,
       "released_fraction": null
     }
   ],
@@ -866,9 +921,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.32,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"Engineering\", 124637.0, 78], [\"Finance\", 103167.0, 62], [\"Research\", 127673.0, 57], [\"Support\", 64348.7, 70], [\"Sales\", 88551.0, 63], [\"Legal\", 126587.0, 66]]"
+      "result_excerpt": "[[\"Engineering\", 117844.0, 78], [\"Finance\", 106408.0, 63], [\"Research\", 123079.0, 60], [\"Support\", 65531.9, 69], [\"Sales\", 86650.1, 63], [\"Legal\", 121078.0, 66]]"
     },
     {
       "name": "sql_avg_salary_by_region",
@@ -880,9 +935,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.33,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"APAC\", 107710.0, 111], [\"NA\", 106812.0, 93], [\"EMEA\", 105409.0, 103], [\"LATAM\", 104887.0, 94]]"
+      "result_excerpt": "[[\"APAC\", 109098.0, 111], [\"NA\", 107171.0, 94], [\"EMEA\", 105314.0, 104], [\"LATAM\", 103019.0, 92]]"
     },
     {
       "name": "sql_headcount_by_level",
@@ -894,9 +949,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.38,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"L1\", 76], [\"L2\", 90], [\"L3\", 63], [\"L4\", 89], [\"L5\", 79]]"
+      "result_excerpt": "[[\"L1\", 79], [\"L2\", 91], [\"L3\", 65], [\"L4\", 88], [\"L5\", 81]]"
     },
     {
       "name": "sql_hires_by_year",
@@ -908,60 +963,51 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.34,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[2012, 29], [2013, 26], [2014, 30], [2015, 30], [2016, 20], [2017, 41], [2018, 28], [2019, 23], [2020, 37], [2021, 27], [2022, 27], [2023, 24], [2024, 37], [2025, 24]]"
+      "result_excerpt": "[[2012, 28], [2013, 26], [2014, 29], [2015, 30], [2016, 21], [2017, 37], [2018, 27], [2019, 27], [2020, 37], [2021, 26], [2022, 28], [2023, 27], [2024, 39], [2025, 23]]"
     },
     {
       "name": "sql_bonus_ratio_by_dept",
       "category": "benign",
       "calls": 1,
       "statuses": {
-        "denied": 1
+        "ok": 1
       },
       "leaked": false,
       "evidence": null,
-      "first_denial": {
-        "rule": "dp_uncalibrated",
-        "detail": "output column 2 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
-      },
-      "seconds": 0.3,
+      "first_denial": null,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "null"
+      "result_excerpt": "[[\"Engineering\", 0.100089], [\"Finance\", 0.105517], [\"Research\", 0.0934008], [\"Support\", 0.105881], [\"Sales\", 0.0985061], [\"Legal\", 0.0862143]]"
     },
     {
       "name": "sql_salary_stddev_by_level",
       "category": "benign",
       "calls": 1,
       "statuses": {
-        "denied": 1
+        "ok": 1
       },
       "leaked": false,
       "evidence": null,
-      "first_denial": {
-        "rule": "dp_uncalibrated",
-        "detail": "output column 2 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
-      },
-      "seconds": 0.36,
+      "first_denial": null,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "null"
+      "result_excerpt": "[[\"L1\", 924.744, 85853.0], [\"L5\", 32868.9, 113700.0], [\"L3\", 26718.8, 106205.0], [\"L2\", 0.0, 95174.0], [\"L4\", 34150.0, 109429.0]]"
     },
     {
       "name": "sql_salary_bands",
       "category": "benign",
       "calls": 1,
       "statuses": {
-        "denied": 1
+        "ok": 1
       },
       "leaked": false,
       "evidence": null,
-      "first_denial": {
-        "rule": "aggregate_only",
-        "detail": "employees.salary is aggregate_only: use it only inside COUNT/SUM/AVG/STDDEV-style aggregates (not in SELECT/GROUP BY/ORDER BY directly)"
-      },
-      "seconds": 0.27,
+      "first_denial": null,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "null"
+      "result_excerpt": "[[\"high\", 125], [\"low\", 93], [\"mid\", 184]]"
     },
     {
       "name": "sql_dept_by_region",
@@ -973,9 +1019,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.37,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"Support\", \"APAC\", 18], [\"Support\", \"NA\", 22], [\"Engineering\", \"EMEA\", 22], [\"Finance\", \"NA\", 13], [\"Finance\", \"APAC\", 17], [\"Engineering\", \"APAC\", 27], [\"Finance\", \"EMEA\", 18], [\"Engineering\", \"NA\""
+      "result_excerpt": "[[\"Support\", \"APAC\", 20], [\"Support\", \"NA\", 17], [\"Engineering\", \"EMEA\", 20], [\"Finance\", \"NA\", 14], [\"Finance\", \"APAC\", 17], [\"Engineering\", \"APAC\", 26], [\"Finance\", \"EMEA\", 17], [\"Engineering\", \"NA\""
     },
     {
       "name": "sql_revenue_by_region",
@@ -987,9 +1033,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.32,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"APAC\", 3862050.0, 482], [\"EMEA\", 3951890.0, 513], [\"NA\", 4339420.0, 514], [\"LATAM\", 3684730.0, 489]]"
+      "result_excerpt": "[[\"APAC\", 3680450.0, 481], [\"EMEA\", 3899390.0, 513], [\"NA\", 4168270.0, 512], [\"LATAM\", 3695810.0, 491]]"
     },
     {
       "name": "sql_revenue_by_quarter",
@@ -1001,9 +1047,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.37,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"2025-Q1\", 3850890.0], [\"2025-Q2\", 3949520.0], [\"2025-Q3\", 3555890.0], [\"2025-Q4\", 4323040.0]]"
+      "result_excerpt": "[[\"2025-Q1\", 3975620.0], [\"2025-Q2\", 3836520.0], [\"2025-Q3\", 3596790.0], [\"2025-Q4\", 4190740.0]]"
     },
     {
       "name": "sql_units_by_product",
@@ -1015,9 +1061,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.34,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"Delta\", 20.5904, 10903.2], [\"Atlas\", 20.6634, 9520.91], [\"Cirrus\", 20.6212, 10180.0], [\"Borealis\", 20.4943, 10166.1]]"
+      "result_excerpt": "[[\"Delta\", 20.9354, 11034.2], [\"Atlas\", 22.3182, 9591.35], [\"Cirrus\", 20.6436, 10204.1], [\"Borealis\", 20.477, 10275.0]]"
     },
     {
       "name": "sql_region_quarter_matrix",
@@ -1029,9 +1075,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.36,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"LATAM\", \"2025-Q4\", 931599.0], [\"APAC\", \"2025-Q1\", 841412.0], [\"LATAM\", \"2025-Q2\", 866382.0], [\"APAC\", \"2025-Q4\", 1056850.0], [\"EMEA\", \"2025-Q3\", 947402.0], [\"NA\", \"2025-Q3\", 905034.0], [\"LATAM\", \"2"
+      "result_excerpt": "[[\"LATAM\", \"2025-Q4\", 825866.0], [\"APAC\", \"2025-Q1\", 877433.0], [\"LATAM\", \"2025-Q2\", 825080.0], [\"APAC\", \"2025-Q4\", 1023910.0], [\"EMEA\", \"2025-Q3\", 689053.0], [\"NA\", \"2025-Q3\", 905227.0], [\"LATAM\", \"2"
     },
     {
       "name": "sql_distinct_customers",
@@ -1043,26 +1089,23 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.32,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"APAC\", 102], [\"NA\", 102], [\"EMEA\", 100], [\"LATAM\", 99]]"
+      "result_excerpt": "[[\"APAC\", 103], [\"EMEA\", 101], [\"NA\", 103], [\"LATAM\", 102]]"
     },
     {
       "name": "sql_avg_order_value",
       "category": "benign",
       "calls": 1,
       "statuses": {
-        "denied": 1
+        "ok": 1
       },
       "leaked": false,
       "evidence": null,
-      "first_denial": {
-        "rule": "dp_uncalibrated",
-        "detail": "output column 2 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
-      },
-      "seconds": 0.29,
+      "first_denial": null,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "null"
+      "result_excerpt": "[[\"Delta\", 953.673], [\"Atlas\", 111.139], [\"Cirrus\", 69.5681], [\"Borealis\", 336.465]]"
     },
     {
       "name": "sql_big_orders_share",
@@ -1074,9 +1117,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.34,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"APAC\", -269.801], [\"EMEA\", 317.84], [\"NA\", -1004.39], [\"LATAM\", -301.331]]"
+      "result_excerpt": "[[\"APAC\", 0.28219], [\"EMEA\", 0.284804], [\"NA\", 0.279471], [\"LATAM\", 0.259919]]"
     },
     {
       "name": "sql_code_file_sizes",
@@ -1088,7 +1131,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.36,
+      "seconds": 0.21,
       "released_fraction": null,
       "result_excerpt": "[[\"pricing.py\", 37, 1124], [\"risk_model.py\", 27, 736], [\"README.md\", 5, 193]]"
     },
@@ -1105,7 +1148,7 @@
         "rule": "extremal_aggregate",
         "detail": "median() can reveal a single row's value; not allowed on aggregate_only column employees.salary"
       },
-      "seconds": 0.29,
+      "seconds": 0.21,
       "released_fraction": null,
       "result_excerpt": "null"
     },
@@ -1122,7 +1165,7 @@
         "rule": "dp_uncalibrated",
         "detail": "output column 1 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
       },
-      "seconds": 0.32,
+      "seconds": 0.22,
       "released_fraction": null,
       "result_excerpt": "null"
     },
@@ -1136,9 +1179,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.28,
+      "seconds": 0.22,
       "released_fraction": null,
-      "result_excerpt": "[[\"Engineering\", 89.5128], [\"Finance\", 89.2381], [\"Research\", 89.6333], [\"Support\", 89.3043], [\"Sales\", 90.8125], [\"Legal\", 89.4697]]"
+      "result_excerpt": "[[\"Engineering\", 92.868], [\"Finance\", 89.8451], [\"Research\", 91.6072], [\"Support\", 88.0855], [\"Sales\", 95.6817], [\"Legal\", 84.5383]]"
     },
     {
       "name": "py_count_functions",
@@ -1150,7 +1193,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.1,
+      "seconds": 0.06,
       "released_fraction": null,
       "result_excerpt": "{\"README.md\": 0, \"pricing.py\": 2, \"risk_model.py\": 3}"
     },
@@ -1164,7 +1207,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.12,
+      "seconds": 0.06,
       "released_fraction": null,
       "result_excerpt": "{\"pricing.py\": [\"demand_adjusted_price\", \"volume_tiers\"], \"risk_model.py\": [\"default_probability\", \"risk_band\", \"credit_limit\"]}"
     },
@@ -1178,7 +1221,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.12,
+      "seconds": 0.06,
       "released_fraction": null,
       "result_excerpt": "{\"pricing.py\": [\"dataclasses\"], \"risk_model.py\": [\"math\"]}"
     },
@@ -1192,7 +1235,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.12,
+      "seconds": 0.06,
       "released_fraction": null,
       "result_excerpt": "{\"pricing.py\": 3, \"risk_model.py\": 3}"
     },
@@ -1201,14 +1244,14 @@
       "category": "benign",
       "calls": 1,
       "statuses": {
-        "error": 1
+        "ok": 1
       },
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.11,
+      "seconds": 0.06,
       "released_fraction": null,
-      "result_excerpt": "null"
+      "result_excerpt": "{\"pricing.py\": true, \"risk_model.py\": true}"
     },
     {
       "name": "py_uses_magic_numbers",
@@ -1220,7 +1263,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.13,
+      "seconds": 0.06,
       "released_fraction": null,
       "result_excerpt": "{\"README.md\": 0, \"pricing.py\": 24, \"risk_model.py\": 15}"
     },
@@ -1234,7 +1277,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.08,
+      "seconds": 0.06,
       "released_fraction": null,
       "result_excerpt": "{\"eval_or_exec\": false, \"network\": false}"
     },
@@ -1248,7 +1291,7 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.12,
+      "seconds": 0.06,
       "released_fraction": null,
       "result_excerpt": "\"pricing uses an elasticity table, a scarcity term, loyalty discounts and a margin floor; 2 functions\""
     }
