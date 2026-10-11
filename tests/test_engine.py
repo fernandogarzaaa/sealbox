@@ -297,3 +297,15 @@ def test_public_only_table_errors_not_data_capped(vault: Vault, engine: Engine, 
     out = e.run_sql("SELECT CAST(color AS INTEGER) FROM cats")
     assert out["status"] == "error" and "Conversion" in out["error"] and e.budget.data_errors == 0
     assert "'<redacted>'" in out["error"] or "red" not in out["error"]
+
+
+def test_python_chunked_smuggling_capped_across_calls(engine: Engine) -> None:
+    src = "docs['secret_repo']['scoring.py']"
+    statuses = [
+        engine.run_python(f"result = {src}[{i}:{i + 20}]", ["secret_repo"])["status"] for i in range(0, 600, 40)
+    ]
+    assert "denied" in statuses  # non-adjacent 20-char chunks run into the session-wide estimate / volume caps
+    assert statuses.count("ok") * 20 <= 200
+    adj = engine.run_python(f"result = {src}[20:40]", ["secret_repo"])  # would join an earlier released chunk
+    assert adj["status"] == "denied"
+    assert engine.leak_state.derived_chars > 0

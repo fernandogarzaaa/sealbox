@@ -19,7 +19,7 @@ from typing import Any
 
 from .compute import Prepared, norm_value
 from .detectors import find_injection, find_pii, redact
-from .fingerprint import expand_encodings
+from .fingerprint import CharIndex, expand_encodings, rolling_hashes, squash
 from .policy import DatasetPolicy, LeakConfig
 from .tokenizer import TOKEN_RE
 
@@ -46,6 +46,40 @@ class GateResult:
     nbytes: int = 0
 
 
+MAX_FRAGMENTS = 256  # released string fragments remembered per session for cross-call join checks
+# fragments of one output joined pairwise (the in-order concatenation is always checked)
+MAX_NEW_FRAGMENTS = 64
+MIN_DERIVED_CAP = 256  # floor for the corpus-relative derived-volume cap
+
+
+@dataclass
+class SessionLeakState:
+    """Cumulative content-leak accounting for one session (one engine).
+
+    * ``hits``: dataset -> distinct protected character fingerprints released so far (any call, any order).
+    * ``seam_hits``: dataset -> fingerprints found only by joining two separately released fragments, i.e.
+      evidence that the agent is releasing protected content in pieces for offline reassembly.
+    * ``protected_chars``: dataset -> running estimate of protected characters reproduced (see ``_estimate``).
+    * ``derived_chars``: bytes (canonical JSON) of code-derived output released from calls that read a code/doc dataset
+      (a hard volume cap, independent of whether the fingerprints recognise the content).
+    * ``fragments``: squashed (head, tail) edges of recently released strings, for join checks.
+    """
+
+    hits: dict[str, set[int]] = field(default_factory=dict)
+    seam_hits: dict[str, set[int]] = field(default_factory=dict)
+    derived_chars: int = 0
+    protected_chars: dict[str, float] = field(default_factory=dict)  # dataset -> estimated chars reproduced
+    fragments: list[tuple[str, str]] = field(default_factory=list)
+
+    def remember(self, strings: list[str], edge: int) -> None:
+        for s in strings:
+            sq = squash(s)
+            frag = (sq[:edge], sq[-edge:])
+            if sq and frag not in self.fragments:
+                self.fragments.append(frag)
+        del self.fragments[:-MAX_FRAGMENTS]
+
+
 @dataclass
 class EffectivePolicy:
     """Strictest combination of the policies of every dataset a call touched."""
@@ -67,7 +101,11 @@ class EffectivePolicy:
             max_shared_shingles=min(p.leak.max_shared_shingles for p in policies),
             minhash_threshold=min(p.leak.minhash_threshold for p in policies),
             opaque_blob_min_len=min(p.leak.opaque_blob_min_len for p in policies),
-            max_session_char_shingles=min(p.leak.max_session_char_shingles for p in policies),
+            max_contiguous_chars=min(p.leak.max_contiguous_chars for p in policies),
+            max_session_protected_chars=min(p.leak.max_session_protected_chars for p in policies),
+            max_session_seam_hits=min(p.leak.max_session_seam_hits for p in policies),
+            max_session_derived_chars=min(p.leak.max_session_derived_chars for p in policies),
+            max_session_derived_fraction=min(p.leak.max_session_derived_fraction for p in policies),
         )
         return cls(
             max_output_rows=min(p.max_output_rows for p in policies),
@@ -130,13 +168,10 @@ class EgressGate:
         max_rows: int | None = None,
         origin: str = "result",
         allow_tokens: bool = True,
-        session_hits: dict[str, set[int]] | None = None,
-        stream_tail: str = "",
+        session: SessionLeakState | None = None,
     ) -> GateResult:
-        """``session_hits`` (dataset -> matched char-shingle hashes released so far) enables cumulative
-        leak accounting; it is updated in place only when the output is allowed. ``stream_tail`` is the end
-        of the previously released text, so content split across consecutive outputs is fingerprinted at
-        the seams."""
+        """``session`` enables cumulative leak accounting across calls (chunked smuggling, cross-call joins,
+        code/doc derived-volume cap). It is updated in place only when the output is allowed."""
         preps = [self.prepared[d] for d in datasets if d in self.prepared]
         pol = EffectivePolicy.combine([p.policy for p in preps])
         reasons: list[Reason] = []
@@ -218,7 +253,7 @@ class EgressGate:
             protected: set[str] = set()
             for p in preps:
                 protected |= p.protected
-            hits = 0
+            n_raw = 0
             for v in scalars:
                 if isinstance(v, str):
                     cands = {norm_value(v)} | {norm_value(_num(m)) for m in _NUM_IN_TEXT.findall(v)}
@@ -228,10 +263,10 @@ class EgressGate:
                             cands.add(norm_value(" ".join(words[i : i + n])))
                 else:
                     cands = {norm_value(v)}
-                hits += len({c for c in cands if c is not None} & protected)
-            if hits:
+                n_raw += len({c for c in cands if c is not None} & protected)
+            if n_raw:
                 reasons.append(
-                    Reason("raw_value", f"output contains {hits} raw value(s) from protected (non-public) columns")
+                    Reason("raw_value", f"output contains {n_raw} raw value(s) from protected (non-public) columns")
                 )
             if not allow_tokens:
                 toks = {t for s in strings for t in TOKEN_RE.findall(s)}
@@ -246,6 +281,9 @@ class EgressGate:
 
         # 5. proprietary content fingerprints, including encoded forms
         char_new: dict[str, set[int]] = {}
+        seam_new: dict[str, set[int]] = {}
+        est_add: dict[str, float] = {}
+        derived = 0
         if pol.leak.enabled and strings:
             text = "\n".join(strings)
             decoded = expand_encodings(text, pol.leak.opaque_blob_min_len)
@@ -258,7 +296,25 @@ class EgressGate:
                     )
                 )
             variants = [text, *decoded.texts]
-            for p in preps:
+            content_preps = [p for p in preps if len(p.fingerprints) or p.kind == "docs"]
+            if session is not None and check_protected and content_preps:
+                derived = canonical_bytes(payload)
+                total_derived = session.derived_chars + derived
+                corpus = sum(p.fingerprints.chars.n_chars for p in content_preps)
+                cap = min(
+                    pol.leak.max_session_derived_chars,
+                    max(MIN_DERIVED_CAP, int(pol.leak.max_session_derived_fraction * corpus)),
+                )
+                if total_derived > cap:
+                    reasons.append(
+                        Reason(
+                            "derived_volume",
+                            f"code-derived output from code/document datasets would total {total_derived} "
+                            f"bytes this session; the cap is {cap} (min of max_session_derived_chars and "
+                            "max_session_derived_fraction of the protected content size)",
+                        )
+                    )
+            for p in content_preps:
                 if not len(p.fingerprints):
                     continue
                 shared = max(p.fingerprints.shared_exact(t) for t in variants)
@@ -282,28 +338,103 @@ class EgressGate:
                         )
                     )
                     continue
-                hits: set[int] = set()
-                for t in [*variants, *(stream_tail + v for v in variants if stream_tail)]:
-                    hits |= p.fingerprints.char_hits(t)
-                prior = session_hits.get(p.name, set()) if session_hits is not None else set()
-                total = len(prior | hits)
-                if total > pol.leak.max_session_char_shingles:
+                cidx = p.fingerprints.chars
+                run = max(cidx.longest_run(t) for t in [*variants, *strings])
+                if run > pol.leak.max_contiguous_chars:
                     reasons.append(
                         Reason(
                             "content_leak",
-                            f"output (together with earlier outputs this session) reproduces protected content "
-                            f"from dataset {p.name!r} ({total} matching character fingerprints; chunked, "
-                            "spaced-out or re-encoded copies count)",
+                            f"output contains a {run}-character stretch copied from protected content in dataset "
+                            f"{p.name!r} (max {pol.leak.max_contiguous_chars}, whitespace/case-insensitive)",
                         )
                     )
-                elif hits:
-                    char_new[p.name] = hits
+                    continue
+                if session is None:
+                    continue
+                # hits inside individual strings or decodings are plain copies; hits that only appear in the
+                # joined text (or when joining remembered fragments) mean pieces are meant to be reassembled
+                hits: set[int] = set()
+                for t in [*strings, *variants[1:]]:
+                    hits |= cidx.hits(t)
+                seams = (cidx.hits(text) - hits) | _join_hits(cidx, strings, session.fragments)
+                prior = session.hits.get(p.name, set())
+                new_fps = (hits | seams) - prior
+                est_new = _estimate(cidx, strings, variants, new_fps)
+                est = round(session.protected_chars.get(p.name, 0.0) + est_new)
+                seam_total = len(session.seam_hits.get(p.name, set()) | (seams - hits))
+                if est > pol.leak.max_session_protected_chars:
+                    reasons.append(
+                        Reason(
+                            "content_leak",
+                            f"output (together with earlier outputs this session) reproduces about {est} "
+                            f"characters of protected content from dataset {p.name!r} (cap "
+                            f"{pol.leak.max_session_protected_chars}; chunked, spaced-out or re-encoded copies "
+                            "count)",
+                        )
+                    )
+                elif seam_total > pol.leak.max_session_seam_hits:
+                    reasons.append(
+                        Reason(
+                            "content_leak",
+                            f"released fragments join up into protected content from dataset {p.name!r} "
+                            f"({seam_total} cross-fragment fingerprints this session): content is being "
+                            "released in pieces",
+                        )
+                    )
+                else:
+                    char_new[p.name] = hits | seams
+                    seam_new[p.name] = seams - hits
+                    est_add[p.name] = est_new
         if reasons:
             return GateResult(False, reasons=reasons)
-        if session_hits is not None:
+        if session is not None:
             for name, h in char_new.items():
-                session_hits.setdefault(name, set()).update(h)
+                session.hits.setdefault(name, set()).update(h)
+            for name, add in est_add.items():
+                session.protected_chars[name] = session.protected_chars.get(name, 0.0) + add
+            for name, h in seam_new.items():
+                if h:
+                    session.seam_hits.setdefault(name, set()).update(h)
+            session.derived_chars += derived
+            if char_new or derived:
+                edge = max(p.fingerprints.chars.k for p in preps) - 1
+                session.remember(strings, edge)
         return GateResult(True, payload=payload, notes=notes, nbytes=canonical_bytes(payload))
+
+
+def _estimate(cidx: CharIndex, strings: list[str], variants: list[str], new_fps: set[int]) -> float:
+    """Estimated protected characters newly revealed: each new winnowed fingerprint stands for about
+    ``(w + 1) / 2`` characters, plus ``k - 1`` characters of edge for every released piece that carries any
+    (a window only "sees" a fragment's first ``len - k + 1`` positions, so short chunks would otherwise be
+    undercounted by up to ~40%)."""
+    if not new_fps:
+        return 0.0
+    pieces = 0
+    for t in [*strings, *variants[1:]]:
+        sq = squash(t)
+        if any(h in new_fps for h in rolling_hashes(sq, cidx.k)):
+            pieces += 1
+    return len(new_fps) * cidx.chars_per_fingerprint + max(1, pieces) * (cidx.k - 1)
+
+
+def _join_hits(cidx: CharIndex, strings: list[str], fragments: list[tuple[str, str]]) -> set[int]:
+    """Fingerprints that appear only when two released fragments are joined, in either order: pairs within
+    this output and pairs of (earlier fragment, new fragment). Fragments are compared by their squashed edges
+    so the cost is O(fragments x new fragments x k)."""
+    new = [sq for sq in (squash(s) for s in strings) if sq][:MAX_NEW_FRAGMENTS]
+    if not new:
+        return set()
+    edge = cidx.k - 1
+    new_edges = [(sq[:edge], sq[-edge:]) for sq in new]
+    out: set[int] = set()
+    for i, (h1, t1) in enumerate(new_edges):
+        for j, (h2, _t2) in enumerate(new_edges):
+            if i != j:
+                out |= cidx.seam_hits(t1, h2)
+        for h0, t0 in fragments:
+            out |= cidx.seam_hits(t0, h1)
+            out |= cidx.seam_hits(t1, h0)
+    return out
 
 
 def _num(s: str) -> float | str:

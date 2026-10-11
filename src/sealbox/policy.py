@@ -49,9 +49,22 @@ class LeakConfig:
     max_shared_shingles: int = 2  # more shared exact shingles than this -> deny
     minhash_threshold: float = 0.55  # estimated Jaccard of structural windows -> deny
     opaque_blob_min_len: int = 64  # base64/hex runs at least this long that don't decode to text -> deny
-    # whitespace/case-insensitive character fingerprints, accumulated over the whole session so content
-    # smuggled in small chunks (or spaced out) is caught: more distinct matching 24-char shingles -> deny
-    max_session_char_shingles: int = 16
+    # one output containing a stretch longer than this (whitespace-free chars) that matches protected content
+    # (spaced-out / re-cased / decoded copies included) -> deny
+    max_contiguous_chars: int = 32
+    # Session-wide accounting (run_python), so content smuggled in small chunks, spaced out or shuffled is
+    # caught. Estimated protected characters reproduced (winnowed whitespace/case-insensitive character
+    # fingerprints x their spacing) above this -> deny.
+    max_session_protected_chars: int = 160
+    # fingerprints that only appear when two separately released fragments are joined (pieces being
+    # released for offline reassembly) above this -> deny
+    max_session_seam_hits: int = 0
+    # hard cap on bytes (canonical JSON) of code-derived output from run_python calls that read a
+    # code/document dataset, whether or not the fingerprints recognise it (bounds custom ciphers, char-code
+    # lists and sub-window chunks). The effective cap is min(max_session_derived_chars,
+    # max(256, max_session_derived_fraction x protected content size)).
+    max_session_derived_chars: int = 16_000
+    max_session_derived_fraction: float = 0.25
 
 
 @dataclass
@@ -87,6 +100,14 @@ class DatasetPolicy:
             raise PolicyError("injection_action must be strip, deny or flag")
         if self.dp.epsilon_per_query <= 0:
             raise PolicyError("dp.epsilon_per_query must be > 0")
+        if (
+            self.leak.max_contiguous_chars < 0
+            or self.leak.max_session_protected_chars < 0
+            or self.leak.max_session_seam_hits < 0
+            or self.leak.max_session_derived_chars < 0
+            or not 0 < self.leak.max_session_derived_fraction <= 1
+        ):
+            raise PolicyError("leak session caps must be >= 0 and max_session_derived_fraction in (0, 1]")
         if self.max_output_rows < 1 or self.max_output_bytes < 64:
             raise PolicyError("output caps too small")
 

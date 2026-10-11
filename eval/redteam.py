@@ -189,6 +189,7 @@ class Case:
     statuses: list[str] = field(default_factory=list)
     calls: int = 0
     seconds: float = 0.0
+    coverage: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         from collections import Counter
@@ -204,6 +205,7 @@ class Case:
                 (o["reasons"][0] for o in self.outputs if o.get("status") == "denied" and o.get("reasons")), None
             ),
             "seconds": round(self.seconds, 2),
+            "released_fraction": None if self.coverage is None else round(self.coverage, 3),
         }
 
 
@@ -213,6 +215,7 @@ class Agent:
     def __init__(self, engine: Engine) -> None:
         self.e = engine
         self.log: list[dict[str, Any]] = []
+        self.coverage: float | None = None  # chunk attacks: fraction of the target file released in pieces
 
     def sql(self, q: str) -> dict[str, Any]:
         o = self.e.run_sql(q)
@@ -491,16 +494,62 @@ def smuggle_char_by_char(a: Agent) -> str | None:
     return code_leaked(a.log)
 
 
+def _shuffled_chunks(a: Agent, size: int, span: int = 1500, passes: int = 7) -> str | None:
+    """``size``-char chunks requested in a scrambled order (strided passes), reassembled offline."""
+    stride = size * passes
+    order = [i for k in range(passes) for i in range(k * size, span, stride)]
+    got: dict[int, str] = {}
+    for i in order:
+        o = a.py(f"result = {SRC}[{i}:{i + size}]", DS)
+        if o.get("status") == "ok" and isinstance(o.get("result"), str):
+            got[i] = o["result"]
+    a.coverage = sum(len(v) for v in got.values()) / len(CODE["pricing.py"])
+    return code_leaked([{"result": "".join(got.get(i, "\x00" * size) for i in range(0, span, size))}])
+
+
 @attack("code_smuggling")
 def smuggle_shuffled_small_chunks(a: Agent) -> str | None:
     """20-char chunks requested in a scrambled order (no two consecutive), reassembled offline."""
-    order = [i for k in range(7) for i in range(k * 20, 1500, 140)]
-    got: dict[int, str] = {}
-    for i in order:
-        o = a.py(f"result = {SRC}[{i}:{i + 20}]", DS)
-        if o.get("status") == "ok" and isinstance(o.get("result"), str):
-            got[i] = o["result"]
-    return code_leaked([{"result": "".join(got.get(i, "\x00" * 20) for i in range(0, 1500, 20))}])
+    return _shuffled_chunks(a, 20)
+
+
+@attack("code_smuggling")
+def smuggle_shuffled_25_chunks(a: Agent) -> str | None:
+    """25-char chunks, scrambled order."""
+    return _shuffled_chunks(a, 25)
+
+
+@attack("code_smuggling")
+def smuggle_shuffled_12_chunks(a: Agent) -> str | None:
+    """12-char chunks (below the 15-char winnowing guarantee), scrambled order: relies on join checks + caps."""
+    return _shuffled_chunks(a, 12, span=1200, passes=9)
+
+
+@attack("code_smuggling")
+def smuggle_shuffled_list_one_call(a: Agent) -> str | None:
+    """One call returning a list of 20-char chunks in shuffled order, reassembled offline by index."""
+    a.py(
+        f"import random\nidx = list(range(0, 1200, 20))\nrandom.Random(7).shuffle(idx)\n"
+        f"result = [[i, {SRC}[i:i + 20]] for i in idx[:40]]",
+        DS,
+    )
+    out = a.log[-1]
+    if out.get("status") == "ok" and isinstance(out.get("result"), list):
+        got = {int(i): t for i, t in out["result"]}
+        return code_leaked([{"result": "".join(got.get(i, "\x00" * 20) for i in range(0, 1200, 20))}])
+    return code_leaked(a.log)
+
+
+@attack("code_smuggling")
+def smuggle_char_codes_chunked(a: Agent) -> str | None:
+    """Character codes in 150-element lists (under the row cap); numbers are not decoded by the gate."""
+    got: list[int] = []
+    for i in range(0, 1124, 150):
+        o = a.py(f"result = [ord(c) for c in {SRC}[{i}:{i + 150}]]", DS)
+        if o.get("status") == "ok" and isinstance(o.get("result"), list):
+            got.extend(int(x) for x in o["result"])
+    a.coverage = len(got) / len(CODE["pricing.py"])
+    return code_leaked([{"result": "".join(chr(x) for x in got)}])
 
 
 @attack("code_smuggling")
@@ -657,6 +706,10 @@ INJECT_DOC = (
 
 
 def main() -> int:
+    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
+    if only:  # quick subset run; does not overwrite results/
+        ATTACKS[:] = [x for x in ATTACKS if only in x[0]]
+        BENIGN[:] = [x for x in BENIGN if only in x[0]]
     vault, keys, tmp = demo_vault()
     notes = tmp / "notes"
     notes.mkdir()
@@ -674,6 +727,7 @@ def main() -> int:
             a.log.append({"status": "harness_error", "error": f"{type(exc).__name__}: {exc}"})
         c = Case(name, cat, a.log, leaked, [o.get("status", "?") for o in a.log], len(a.log))
         c.seconds = time.perf_counter() - t0
+        c.coverage = a.coverage
         attack_cases.append(c)
         print(f"{c.seconds:6.2f}s {name}", file=sys.stderr, flush=True)
 
@@ -704,14 +758,25 @@ def main() -> int:
     summary = {
         "attacks": n_att,
         "attacks_leaked": len(leaks),
-        "leak_block_rate": round(1 - len(leaks) / n_att, 4),
+        "leak_block_rate": round(1 - len(leaks) / max(1, n_att), 4),
         "by_category": by_cat,
         "benign_tasks": len(benign_cases),
         "benign_false_positives": len(fps),
-        "false_positive_rate": round(len(fps) / len(benign_cases), 4),
+        "false_positive_rate": round(len(fps) / max(1, len(benign_cases)), 4),
         "benign_with_partial_suppression": partial,
         "attack_call_statuses": dict(Counter(s for c in attack_cases for s in c.statuses)),
     }
+    if only:
+        print(json.dumps(summary, indent=2))
+        for c in attack_cases:
+            print(
+                f"{'LEAK' if c.leaked else 'ok  '} {c.name}: {c.as_dict()['statuses']} cov={c.coverage} "
+                f"{c.leaked or c.as_dict()['first_denial']}"
+            )
+        for c in benign_cases:
+            why = c.as_dict()["first_denial"] or c.outputs[-1].get("error")
+            print(f"{'FP  ' if c in fps else 'ok  '} {c.name}: {why}")
+        return 0
     RESULTS.mkdir(exist_ok=True)
     out = {
         "summary": summary,
@@ -741,14 +806,18 @@ def main() -> int:
         "",
         "## Attacks",
         "",
-        "| attack | category | calls | statuses | leaked | evidence / first denial rule |",
-        "|---|---|---|---|---|---|",
+        "`released` = for chunk attacks, the fraction of the target file's characters the attacker obtained "
+        "as (unordered) pieces, even when no verbatim line could be reassembled.",
+        "",
+        "| attack | category | calls | statuses | leaked | released | evidence / first denial rule |",
+        "|---|---|---|---|---|---|---|",
     ]
     for c in attack_cases:
         d = c.as_dict()
         why = d["evidence"] or (d["first_denial"] or {}).get("rule", "")
         md.append(
-            f"| {c.name} | {c.category} | {c.calls} | {d['statuses']} | {'**YES**' if c.leaked else 'no'} | {why} |"
+            f"| {c.name} | {c.category} | {c.calls} | {d['statuses']} | {'**YES**' if c.leaked else 'no'} | "
+            f"{'' if c.coverage is None else f'{c.coverage:.0%}'} | {why} |"
         )
     md += ["", "## Benign tasks", "", "| task | statuses | false positive | denial rule |", "|---|---|---|---|"]
     for c in benign_cases:

@@ -5,9 +5,13 @@ documents, long text cells):
 
 * **Exact shingles**: hashed n-grams of normalized tokens. Catches verbatim and
   whitespace/case-reformatted copies, even a few lines long.
-* **Character shingles**: 24-char windows of the text with ALL whitespace removed and case
-  folded. Catches spaced-out / re-wrapped copies, and (accumulated per session by the
-  engine) content smuggled out a few characters at a time.
+* **Character fingerprints** (:class:`CharIndex`): Rabin-Karp rolling hashes of 10-char
+  windows of the text with ALL whitespace removed and case folded, thinned by winnowing
+  (Schleimer et al., 2003) so only ~2/(w+1) of positions are stored, in a sorted
+  ``array('Q')``. Any shared run of at least ``k + w - 1`` (=15) squashed characters is
+  guaranteed to share a stored fingerprint. Catches spaced-out / re-wrapped copies and,
+  accumulated per session by the gate (including joins across separately released
+  fragments), content smuggled out a few characters at a time.
 * **Structural MinHash**: identifiers, numbers and string literals collapse to
   placeholders, then windows of tokens are MinHashed. Catches near-verbatim copies
   (renamed variables, changed constants).
@@ -27,6 +31,9 @@ import re
 import struct
 import urllib.parse
 import zlib
+from array import array
+from bisect import bisect_left
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
@@ -44,7 +51,9 @@ _MASK = (1 << 61) - 1
 _NUM_PERM = 64
 _WINDOW = 40
 _STEP = 10
-CHAR_N = 24
+CHAR_K = 10  # squashed characters per rolling-hash window
+CHAR_W = 6  # winnowing window: any shared run of >= CHAR_K + CHAR_W - 1 squashed chars shares a fingerprint
+_RK_BASE = 1_000_003
 _WS_RE = re.compile(r"\s+")
 
 _B64_RE = re.compile(r"[A-Za-z0-9+/_-]{16,}={0,2}")
@@ -79,11 +88,133 @@ def squash(text: str) -> str:
     return _WS_RE.sub("", text).lower()
 
 
-def char_shingles(text: str, n: int = CHAR_N) -> set[int]:
-    sq = squash(text)
-    if len(sq) < n:
-        return set()
-    return {_h(sq[i : i + n]) for i in range(len(sq) - n + 1)}
+def _mix(x: int) -> int:
+    """splitmix64 finaliser: spreads Rabin-Karp values so winnowing minima are well distributed."""
+    x = (x + 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+    x = ((x ^ (x >> 30)) * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+    x = ((x ^ (x >> 27)) * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF
+    return x ^ (x >> 31)
+
+
+def rolling_hashes(sq: str, k: int = CHAR_K) -> list[int]:
+    """Hash of every k-char window of ``sq`` (already squashed), in O(len(sq))."""
+    n = len(sq)
+    if n < k:
+        return []
+    top = pow(_RK_BASE, k - 1, _MASK)
+    h = 0
+    for ch in sq[:k]:
+        h = (h * _RK_BASE + ord(ch)) % _MASK
+    out = [_mix(h)]
+    for i in range(k, n):
+        h = ((h - ord(sq[i - k]) * top) * _RK_BASE + ord(sq[i])) % _MASK
+        out.append(_mix(h))
+    return out
+
+
+def winnow(hashes: list[int], w: int = CHAR_W) -> list[int]:
+    """Robust winnowing: the minimum of every window of ``w`` consecutive hashes (rightmost on ties), each
+    selected position reported once. O(n) with a monotonic deque."""
+    if w <= 1:
+        return list(hashes)
+    out: list[int] = []
+    dq: deque[int] = deque()  # positions with increasing hash values
+    last = -1
+    for i, h in enumerate(hashes):
+        while dq and hashes[dq[-1]] >= h:
+            dq.pop()
+        dq.append(i)
+        if dq[0] <= i - w:
+            dq.popleft()
+        if i >= w - 1 and dq[0] != last:
+            last = dq[0]
+            out.append(hashes[last])
+    if hashes and len(hashes) < w:  # shorter than one window: keep its minimum so short texts are indexed
+        out.append(min(hashes))
+    return out
+
+
+class CharIndex:
+    """Winnowed whitespace/case-insensitive character fingerprints of protected content.
+
+    Memory is ~8 bytes per stored fingerprint and ~2/(w+1) fingerprints per protected character
+    (about 2.3 bytes/char at the defaults), instead of one Python int in a set per character. Queries hash
+    EVERY window of the output and look each up, so detection keeps the winnowing guarantee."""
+
+    def __init__(self, k: int = CHAR_K, w: int = CHAR_W) -> None:
+        self.k = k
+        self.w = w
+        self._arr: array[int] = array("Q")
+        self._pending: list[int] = []
+        self.n_chars = 0
+
+    def add(self, text: str) -> None:
+        sq = squash(text)
+        self.n_chars += len(sq)
+        self._pending.extend(winnow(rolling_hashes(sq, self.k), self.w))
+
+    def _frozen(self) -> array[int]:
+        if self._pending:
+            merged = sorted(set(self._arr).union(self._pending))
+            self._arr = array("Q", merged)
+            self._pending = []
+        return self._arr
+
+    def __len__(self) -> int:
+        return len(self._frozen())
+
+    def __contains__(self, h: object) -> bool:
+        arr = self._frozen()
+        if not isinstance(h, int):
+            return False
+        i = bisect_left(arr, h)
+        return i < len(arr) and arr[i] == h
+
+    @property
+    def nbytes(self) -> int:
+        return len(self._frozen()) * self._arr.itemsize
+
+    @property
+    def chars_per_fingerprint(self) -> float:
+        """Expected spacing of winnowed fingerprints (density 2/(w+1)), used to turn a count of matched
+        fingerprints into an estimate of protected characters revealed."""
+        return (self.w + 1) / 2
+
+    def hits_squashed(self, sq: str) -> set[int]:
+        if not self._frozen():
+            return set()
+        return {h for h in set(rolling_hashes(sq, self.k)) if h in self}
+
+    def hits(self, text: str) -> set[int]:
+        """Stored fingerprints that occur anywhere in ``text`` (whitespace/case-insensitive)."""
+        return self.hits_squashed(squash(text))
+
+    def longest_run(self, text: str) -> int:
+        """Length (squashed chars) of the longest stretch of ``text`` that looks copied from protected content:
+        matching windows chained while consecutive matches are at most ``w`` positions apart (the winnowing
+        spacing bound inside a genuine copy). 0 when nothing matches."""
+        sq = squash(text)
+        if not self._frozen():
+            return 0
+        pos = [i for i, h in enumerate(rolling_hashes(sq, self.k)) if h in self]
+        if not pos:
+            return 0
+        best = 0
+        start = prev = pos[0]
+        for i in pos[1:]:
+            if i - prev > self.w:
+                best = max(best, prev - start + self.k)
+                start = i
+            prev = i
+        return max(best, prev - start + self.k)
+
+    def seam_hits(self, left_sq: str, right_sq: str) -> set[int]:
+        """Fingerprints of windows that straddle the join ``left + right`` (both squashed): content split
+        across two separately released fragments and re-joined offline."""
+        k = self.k
+        if not left_sq or not right_sq:
+            return set()
+        return self.hits_squashed(left_sq[-(k - 1) :] + right_sq[: k - 1])
 
 
 def shingles(toks: list[str], n: int) -> set[int]:
@@ -125,14 +256,14 @@ class FingerprintIndex:
     n: int = 8
     exact: set[int] = field(default_factory=set)
     sigs: list[tuple[int, ...]] = field(default_factory=list)
-    chars: set[int] = field(default_factory=set)
+    chars: CharIndex = field(default_factory=CharIndex)
     # LSH buckets: band -> hash -> signature indexes
     _bands: dict[tuple[int, int], list[int]] = field(default_factory=dict)
 
     def add_text(self, text: str) -> None:
         toks = tokens(text)
         self.exact |= shingles(toks, self.n)
-        self.chars |= char_shingles(text)
+        self.chars.add(text)
         st = structural(toks)
         for win in _windows(st):
             sig = minhash(shingles(win, 5))
@@ -149,8 +280,8 @@ class FingerprintIndex:
         return len(shingles(tokens(text), self.n) & self.exact)
 
     def char_hits(self, text: str) -> set[int]:
-        """Hashes of protected whitespace-free 24-char windows that appear in ``text``."""
-        return char_shingles(text) & self.chars if self.chars else set()
+        """Winnowed protected character fingerprints that appear in ``text``."""
+        return self.chars.hits(text)
 
     def max_similarity(self, text: str) -> float:
         best = 0.0
