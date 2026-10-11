@@ -95,6 +95,23 @@ EXTREMAL_AGGS = frozenset(
 )
 ALL_AGGS = SAFE_AGGS | EXTREMAL_AGGS
 DP_AGGS = frozenset({"count", "count_star", "sum", "avg", "mean", "count_if", "approx_count_distinct"})
+# Spread aggregates: DP-noised only when the operator set clamp bounds for the column (dp.bounds).
+VAR_AGGS = frozenset({"stddev", "stddev_samp", "stddev_pop", "variance", "var_samp", "var_pop"})
+LEAF_AGGS = DP_AGGS | VAR_AGGS
+_COUNTING = frozenset({"count", "count_star", "count_if", "approx_count_distinct"})
+_ARITH = frozenset({"+", "-", "*", "/"})
+MAX_LEAVES = 8
+MAX_CASE_BRANCHES = 12
+_CMP_TYPES = frozenset(
+    {
+        "COMPARE_LESSTHAN",
+        "COMPARE_GREATERTHAN",
+        "COMPARE_LESSTHANOREQUALTO",
+        "COMPARE_GREATERTHANOREQUALTO",
+        "COMPARE_EQUAL",
+        "COMPARE_NOTEQUAL",
+    }
+)
 # Wrappers that keep a single aggregate "plain" for DP purposes.
 _TRANSPARENT = frozenset({"round", "cast", "try_cast", "floor", "ceil", "abs"})
 FORBIDDEN_FUNCS = frozenset(
@@ -122,11 +139,24 @@ SUPPORT_PREFIX = "__sb_support_"
 
 
 @dataclass
+class Leaf:
+    """One DP-able aggregate inside an arithmetic output expression, computed as a hidden column."""
+
+    agg: str
+    column: tuple[str, str] | None
+    bounds: tuple[float, float] | None  # operator clamp bounds (values were clamped in SQL), if set
+    hidden: int  # index among the hidden columns
+
+
+@dataclass
 class OutputCol:
     index: int
-    agg: str | None  # plain DP-able aggregate, if any
+    agg: str | None  # plain DP-able aggregate, "expr" (arithmetic over leaves), "derived", or None
     column: tuple[str, str] | None  # (table, column) the aggregate is over
     sensitive: bool
+    bounds: tuple[float, float] | None = None  # operator clamp bounds for a plain aggregate's column
+    tree: Any = None  # for agg == "expr": ("c", v) | ("l", leaf_no) | ("op", name, [args])
+    leaves: list[Leaf] = field(default_factory=list)
 
 
 @dataclass
@@ -138,6 +168,7 @@ class SqlPlan:
     n_support: int  # number of trailing support columns
     outputs: list[OutputCol] = field(default_factory=list)
     has_star: bool = False
+    n_hidden: int = 0  # hidden leaf columns between the outputs and the support columns
 
 
 @dataclass
@@ -251,10 +282,12 @@ class SqlGuard:
         if has_star:
             raise QueryRejected("unsupported_shape", "SELECT * cannot be combined with aggregation")
 
+        hidden: list[dict[str, Any]] = []
         outputs = [
-            self._output_meta(i, item, aliases, tables, bool(sensitive_tables))
-            for i, item in enumerate(node["select_list"])
+            self._output_meta(i, item, aliases, tables, bool(sensitive_tables), hidden)
+            for i, item in enumerate(list(node["select_list"]))
         ]
+        node["select_list"].extend(hidden)
         for i, t in enumerate(sensitive_tables):
             alias = next((a for a, real in aliases.items() if real == t), t)
             entity = self.policies[t].entity_column
@@ -269,6 +302,7 @@ class SqlGuard:
             n_support=len(sensitive_tables),
             outputs=outputs,
             has_star=False,
+            n_hidden=len(hidden),
         )
 
     # ------------------------------------------------------------------ helpers
@@ -350,6 +384,12 @@ class SqlGuard:
             raise QueryRejected("unsupported_shape", "window functions are not supported (they expose row order)")
         if cls == "LAMBDA":
             raise QueryRejected("unsupported_shape", "lambda functions are not supported")
+        if cls == "CASE" and agg is None and clause in ("select", "group", "order") and self._is_bucket(expr):
+            # CASE WHEN col < c1 THEN 'a' WHEN ... ELSE 'z' END outside an aggregate: the output is a constant
+            # label, so column refs in the conditions act like WHERE filters (still k-anonymous per group).
+            for check in expr.get("case_checks", []):
+                self._walk_expr(check.get("when_expr"), "bucket", None, aliases, tables, refs)
+            return False
         if cls == "FUNCTION":
             fname = str(expr.get("function_name", "")).lower()
             if fname in FORBIDDEN_FUNCS:
@@ -370,6 +410,40 @@ class SqlGuard:
             if isinstance(value, (dict, list)):
                 found |= self._walk_expr(value, clause, agg, aliases, tables, refs)
         return found
+
+    @staticmethod
+    def _is_bucket(expr: dict[str, Any]) -> bool:
+        """A CASE whose results are all constants and whose conditions compare column refs with constants."""
+        checks = expr.get("case_checks") or []
+        if not checks or len(checks) > MAX_CASE_BRANCHES:
+            return False
+
+        def const(e: Any) -> bool:
+            return isinstance(e, dict) and e.get("class") == "CONSTANT"
+
+        def operand(e: Any) -> bool:
+            if not isinstance(e, dict):
+                return False
+            if e.get("class") in ("COLUMN_REF", "CONSTANT"):
+                return True
+            if e.get("class") == "CAST":
+                return operand(e.get("child"))
+            return False
+
+        def cond(e: Any) -> bool:
+            if not isinstance(e, dict):
+                return False
+            if e.get("class") == "COMPARISON" and e.get("type") in _CMP_TYPES:
+                return operand(e.get("left")) and operand(e.get("right"))
+            if e.get("class") == "BETWEEN":
+                return all(operand(e.get(k)) for k in ("input", "lower", "upper"))
+            if e.get("class") == "CONJUNCTION":
+                return all(cond(c) for c in e.get("children", []))
+            return False
+
+        if not all(cond(c.get("when_expr")) and const(c.get("then_expr")) for c in checks):
+            return False
+        return expr.get("else_expr") is None or const(expr.get("else_expr"))
 
     def _resolve(self, names: list[str], aliases: dict[str, str], tables: list[str]) -> list[tuple[str, str]]:
         if not names:
@@ -400,7 +474,7 @@ class SqlGuard:
                     raise QueryRejected("row_level", f"row-level queries are disabled for {r.table}")
                 continue
             if tag == AGGREGATE_ONLY:
-                if r.agg is None and r.clause in ("select", "group", "order"):
+                if r.agg is None and r.clause in ("select", "group", "order"):  # "bucket" refs act as filters
                     raise QueryRejected(
                         "aggregate_only",
                         f"{where} is aggregate_only: use it only inside COUNT/SUM/AVG/STDDEV-style "
@@ -418,16 +492,15 @@ class SqlGuard:
                     )
 
     def _output_meta(
-        self, index: int, item: dict[str, Any], aliases: dict[str, str], tables: list[str], over_sensitive: bool
+        self,
+        index: int,
+        item: dict[str, Any],
+        aliases: dict[str, str],
+        tables: list[str],
+        over_sensitive: bool,
+        hidden: list[dict[str, Any]],
     ) -> OutputCol:
-        expr = item
-        while expr.get("class") in ("FUNCTION", "CAST") and (
-            str(expr.get("function_name", "")).lower() in _TRANSPARENT or expr.get("class") == "CAST"
-        ):
-            children = expr.get("children") or ([expr["child"]] if "child" in expr else [])
-            if not children:
-                break
-            expr = children[0]
+        expr = _unwrap(item)
         refs: list[_Ref] = []
         is_agg = self._walk_expr(item, "select", None, aliases, tables, refs)
         # counting/summing rows of a table that holds individuals is sensitive even over public columns
@@ -436,11 +509,181 @@ class SqlGuard:
         )
         fname = str(expr.get("function_name", "")).lower() if expr.get("class") == "FUNCTION" else ""
         if fname in DP_AGGS:
-            inner: list[_Ref] = []
-            self._walk_expr(expr.get("children", []), "select", fname, aliases, tables, inner)
-            column = (inner[0].table, inner[0].column) if len(inner) == 1 else None
-            return OutputCol(index, fname, column, sensitive)
+            column, bounds, ok = self._leaf_column(expr, fname, aliases, tables)
+            if not ok:
+                return OutputCol(index, "derived", None, sensitive)
+            if bounds is not None and column is not None:
+                self._clamp(expr, bounds)
+            return OutputCol(index, fname, column, sensitive, bounds=bounds)
+        if is_agg and sensitive:
+            leaves: list[Leaf] = []
+            tree = self._arith(item, aliases, tables, leaves, hidden)
+            if tree is not None and leaves:
+                return OutputCol(index, "expr", None, sensitive, tree=tree, leaves=leaves)
         return OutputCol(index, "derived" if is_agg else None, None, sensitive)
+
+    def _leaf_column(
+        self, fn: dict[str, Any], fname: str, aliases: dict[str, str], tables: list[str]
+    ) -> tuple[tuple[str, str] | None, tuple[float, float] | None, bool]:
+        """(column, clamp bounds, calibratable) for a DP aggregate. Counting aggregates are always
+        calibratable (sensitivity 1). Value aggregates are calibratable over a plain column (operator dp.bounds,
+        or the column's range) or over a CASE bucket with numeric constant results (bounds = their range);
+        anything else (e.g. ``sum(salary * 1000)``) could rescale values past the calibrated sensitivity."""
+        inner: list[_Ref] = []
+        self._walk_expr(fn.get("children", []), "select", fname, aliases, tables, inner)
+        column = (inner[0].table, inner[0].column) if len(inner) == 1 else None
+        if fname in _COUNTING:
+            return column, None, True
+        children = fn.get("children") or []
+        if len(children) != 1:
+            return column, None, False
+        child = children[0]
+        if child.get("class") == "COLUMN_REF" and column:
+            b = self.policies[column[0]].dp.bounds.get(column[1])
+            return column, ((float(b[0]), float(b[1])) if b else None), True
+        if child.get("class") == "CASE" and self._is_bucket(child):
+            vals = [c.get("then_expr") for c in child.get("case_checks", [])] + [child.get("else_expr")]
+            nums = []
+            for v in vals:
+                if v is None:
+                    continue
+                x = (v.get("value") or {}).get("value")
+                if (v.get("value") or {}).get("is_null"):
+                    continue
+                if not isinstance(x, (int, float)) or isinstance(x, bool):
+                    return column, None, False
+                nums.append(float(x))
+            if nums:
+                lo, hi = min(nums), max(nums)
+                return None, (lo, hi if hi > lo else lo + 1.0), True
+        return column, None, False
+
+    @staticmethod
+    def _clamp(fn: dict[str, Any], bounds: tuple[float, float]) -> None:
+        """Rewrite agg(col) -> agg(least(greatest(col, lo), hi)) so the noise calibration is truthful."""
+        child = fn["children"][0]
+        fn["children"] = [_func("least", [_func("greatest", [child, _const(bounds[0])]), _const(bounds[1])])]
+
+    def _arith(
+        self,
+        expr: Any,
+        aliases: dict[str, str],
+        tables: list[str],
+        leaves: list[Leaf],
+        hidden: list[dict[str, Any]],
+    ) -> Any:
+        """Parse +,-,*,/ / ROUND / ABS / FLOOR / CEIL / CAST over constants and plain-column DP aggregates.
+        Each aggregate becomes a hidden column the engine noises separately (post-processing keeps DP).
+        Returns None when the expression is anything else."""
+        if not isinstance(expr, dict):
+            return None
+        cls = expr.get("class")
+        if cls == "CONSTANT":
+            v = (expr.get("value") or {}).get("value")
+            return ("c", float(v)) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+        if cls == "CAST":
+            return self._arith(expr.get("child"), aliases, tables, leaves, hidden)
+        if cls != "FUNCTION" or expr.get("filter") or expr.get("distinct"):
+            return None
+        fname = str(expr.get("function_name", "")).lower()
+        if fname in LEAF_AGGS:
+            if len(leaves) >= MAX_LEAVES:
+                return None
+            column, bounds, ok = self._leaf_column(expr, fname, aliases, tables)
+            if not ok:
+                return None
+            leaf_expr = copy.deepcopy(expr)
+            leaf_expr["alias"] = f"__sb_leaf_{len(hidden)}"
+            if bounds is not None and column is not None:
+                self._clamp(leaf_expr, bounds)
+            leaves.append(Leaf(fname, column, bounds, len(hidden)))
+            hidden.append(leaf_expr)
+            return ("l", len(leaves) - 1)
+        if fname in _ARITH or fname in _TRANSPARENT:
+            args = []
+            for ch in expr.get("children") or []:
+                sub = self._arith(ch, aliases, tables, leaves, hidden)
+                if sub is None:
+                    return None
+                args.append(sub)
+            if not args:
+                return None
+            return ("op", fname, args)
+        return None
+
+
+def _unwrap(item: dict[str, Any]) -> dict[str, Any]:
+    expr = item
+    while expr.get("class") in ("FUNCTION", "CAST") and (
+        str(expr.get("function_name", "")).lower() in _TRANSPARENT or expr.get("class") == "CAST"
+    ):
+        children = expr.get("children") or ([expr["child"]] if "child" in expr else [])
+        if not children:
+            break
+        expr = children[0]
+    return expr
+
+
+def _const(v: float) -> dict[str, Any]:
+    return {
+        "class": "CONSTANT",
+        "type": "VALUE_CONSTANT",
+        "alias": "",
+        "value": {"type": {"id": "DOUBLE", "type_info": None}, "is_null": False, "value": float(v)},
+    }
+
+
+def _func(name: str, children: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "class": "FUNCTION",
+        "type": "FUNCTION",
+        "alias": "",
+        "function_name": name,
+        "schema": "",
+        "children": children,
+        "filter": None,
+        "order_bys": {"type": "ORDER_MODIFIER", "orders": []},
+        "distinct": False,
+        "is_operator": False,
+        "export_state": False,
+        "catalog": "",
+    }
+
+
+def evaluate(tree: Any, leaf_values: list[float | None]) -> float | None:
+    """Evaluate an output expression tree on (noised) leaf values. None on NULL / division by ~0."""
+    kind = tree[0]
+    if kind == "c":
+        return float(tree[1])
+    if kind == "l":
+        v = leaf_values[tree[1]]
+        return None if v is None else float(v)
+    _, name, args = tree
+    vals = [evaluate(a, leaf_values) for a in args]
+    if any(v is None for v in vals):
+        return None
+    xs = [float(v) for v in vals if v is not None]
+    if name == "+":
+        return sum(xs)
+    if name == "-":
+        return -xs[0] if len(xs) == 1 else xs[0] - xs[1]
+    if name == "*":
+        return xs[0] * xs[1]
+    if name == "/":
+        return None if abs(xs[1]) < 1e-12 else xs[0] / xs[1]
+    if name == "round":
+        return float(round(xs[0], int(xs[1]) if len(xs) > 1 else 0))
+    if name == "abs":
+        return abs(xs[0])
+    if name == "floor":
+        import math
+
+        return float(math.floor(xs[0]))
+    if name == "ceil":
+        import math
+
+        return float(math.ceil(xs[0]))
+    return xs[0]  # cast / try_cast: value passes through
 
 
 def _has_counting_agg(expr: Any) -> bool:

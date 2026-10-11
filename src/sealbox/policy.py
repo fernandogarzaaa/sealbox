@@ -40,6 +40,10 @@ _ENTITY_HINTS = re.compile(r"(^|_)(person|people|user|customer|employee|patient|
 class DPConfig:
     enabled: bool = True
     epsilon_per_query: float = 1.0
+    # Operator-set clamp bounds per numeric column: values are clamped to [lo, hi] inside every DP aggregate
+    # and noise is calibrated to these bounds (not to the data's real min/max). Required for
+    # STDDEV/VARIANCE. Generated policies pre-fill coarse, outward-rounded bounds for review.
+    bounds: dict[str, list[float]] = field(default_factory=dict)
 
 
 @dataclass
@@ -100,6 +104,16 @@ class DatasetPolicy:
             raise PolicyError("injection_action must be strip, deny or flag")
         if self.dp.epsilon_per_query <= 0:
             raise PolicyError("dp.epsilon_per_query must be > 0")
+        if not isinstance(self.dp.bounds, dict):
+            raise PolicyError("dp.bounds must be a mapping of column -> [lo, hi]")
+        for col, b in self.dp.bounds.items():
+            if (
+                not isinstance(b, (list, tuple))
+                or len(b) != 2
+                or not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in b)
+                or not b[0] < b[1]
+            ):
+                raise PolicyError(f"dp.bounds[{col!r}] must be [lo, hi] numbers with lo < hi")
         if (
             self.leak.max_contiguous_chars < 0
             or self.leak.max_session_protected_chars < 0
@@ -180,6 +194,19 @@ def infer_tag(column: str, n_distinct: int, n_rows: int, is_numeric: bool, avg_l
     return AGGREGATE_ONLY
 
 
+def nice_bounds(lo: float, hi: float) -> list[float]:
+    """Outward-rounded clamp bounds (one significant digit of the larger magnitude), so the policy file does
+    not record the data's exact extremes."""
+    import math
+
+    mag = 10 ** math.floor(math.log10(max(abs(lo), abs(hi), 1.0)))
+    nlo = math.floor(lo / mag) * mag
+    nhi = math.ceil(hi / mag) * mag
+    if nhi <= nlo:
+        nhi = nlo + mag
+    return [float(nlo), float(nhi)]
+
+
 def default_policy(dataset: str, column_info: list[dict[str, Any]], kind: str) -> DatasetPolicy:
     pol = DatasetPolicy(dataset=dataset)
     if kind == "docs":
@@ -191,6 +218,13 @@ def default_policy(dataset: str, column_info: list[dict[str, Any]], kind: str) -
         pol.columns[info["name"]] = infer_tag(
             info["name"], info["n_distinct"], info["n_rows"], info["is_numeric"], info["avg_len"]
         )
+        if (
+            pol.columns[info["name"]] == AGGREGATE_ONLY
+            and info.get("is_numeric")
+            and isinstance(info.get("min"), (int, float))
+            and isinstance(info.get("max"), (int, float))
+        ):
+            pol.dp.bounds[info["name"]] = nice_bounds(float(info["min"]), float(info["max"]))
         if pol.entity_column is None and pol.columns[info["name"]] == TOKENIZE and _ENTITY_HINTS.search(info["name"]):
             pol.entity_column = info["name"]
     if any(tag != PUBLIC for tag in pol.columns.values()):

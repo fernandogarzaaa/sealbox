@@ -80,7 +80,7 @@ def test_dp_noise_and_epsilon_accounting(vault: Vault, engine: Engine) -> None:
     denied = e.run_sql("SELECT dept, count(*) FROM people GROUP BY dept")
     assert denied["status"] == "denied" and denied["reasons"][0]["rule"] == "privacy_budget"
     assert e.budget_status()["epsilon"]["spent"] == 2.0
-    d2 = e.run_sql("SELECT dept, sum(salary) / count(*) FROM people GROUP BY dept")
+    d2 = e.run_sql("SELECT dept, sum(salary * 1000) FROM people GROUP BY dept")  # rescaling defeats calibration
     assert d2["reasons"][0]["rule"] == "dp_uncalibrated"
     pub = e.run_sql("SELECT dept, max(dept) FROM people GROUP BY dept")  # no sensitive output: no epsilon
     assert pub["status"] == "ok" and e.budget.epsilon_spent == pytest.approx(2.0)

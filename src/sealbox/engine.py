@@ -23,7 +23,7 @@ from .errors import QueryRejected, SealboxError
 from .gate import EgressGate, GateResult, Reason, SessionLeakState, canonical_bytes
 from .policy import PUBLIC, SessionConfig
 from .sandbox import pad_latency, run_python
-from .sqlguard import SqlGuard
+from .sqlguard import VAR_AGGS, OutputCol, SqlGuard, evaluate
 from .synth import describe
 from .tokenizer import Tokenizer
 from .vault import Vault
@@ -225,12 +225,14 @@ class Engine:
         if len(rows) > 10_000:
             return self._deny("run_sql", args, [Reason("output_rows", "result exceeds 10000 rows")], _SQL_HINT)
         if plan.n_support:
-            out_cols = columns[: -plan.n_support]
+            n_out = len(columns) - plan.n_support - plan.n_hidden
+            out_cols = columns[:n_out]
             kept = []
             for r in rows:
                 support = min(int(x or 0) for x in r[-plan.n_support :])
                 if support >= k:
-                    kept.append([*r[: -plan.n_support], support])
+                    # layout: outputs, hidden DP leaf columns, then the entity support count last
+                    kept.append([*r[:n_out], *r[n_out : n_out + plan.n_hidden], support])
             suppressed = len(rows) - len(kept)
             if suppressed:
                 notes.append(f"{suppressed} group(s) suppressed: fewer than k={k} contributing entities")
@@ -245,36 +247,67 @@ class Engine:
             if dp_on:
                 eps_q = min(prep_by[t].policy.dp.epsilon_per_query for t in plan.sensitive_tables)
                 derived = [o for o in plan.outputs if o.sensitive and o.agg == "derived"]
-                if derived:
+                unbounded = [
+                    (o, leaf)
+                    for o in plan.outputs
+                    if o.sensitive and o.agg == "expr"
+                    for leaf in o.leaves
+                    if leaf.agg in VAR_AGGS and leaf.bounds is None
+                ]
+                if derived or unbounded:
                     self.budget.record_error()
+                    if unbounded:
+                        o, leaf = unbounded[0]
+                        col = f"{leaf.column[0]}.{leaf.column[1]}" if leaf.column else "?"
+                        reason = Reason(
+                            "dp_uncalibrated",
+                            f"output column {o.index + 1}: {leaf.agg}() needs operator clamp bounds for {col} "
+                            "(dp.bounds in the dataset policy) to be noised",
+                        )
+                    else:
+                        reason = Reason(
+                            "dp_uncalibrated",
+                            f"output column {derived[0].index + 1} combines aggregates of protected "
+                            "columns in a way differential-privacy noise cannot be calibrated for",
+                        )
                     return self._deny(
                         "run_sql",
                         args,
-                        [
-                            Reason(
-                                "dp_uncalibrated",
-                                f"output column {derived[0].index + 1} combines aggregates of protected "
-                                "columns in a way differential-privacy noise cannot be calibrated for",
-                            )
-                        ],
-                        "Select plain COUNT/SUM/AVG columns and combine them yourself, or ask the operator to "
-                        "disable dp for this dataset.",
+                        [reason],
+                        "Use COUNT/SUM/AVG (and STDDEV/VARIANCE on columns with dp.bounds) combined with + - * / "
+                        "and ROUND; or ask the operator to set dp.bounds or disable dp for this dataset.",
                     )
                 noised = [o for o in plan.outputs if o.sensitive and o.agg is not None]
-                need = eps_q * len(noised)
+                n_charges = sum(len(o.leaves) if o.agg == "expr" else 1 for o in noised)
+                need = eps_q * n_charges
                 ok = self.budget.can_spend_epsilon(need)
                 if not ok.ok:
                     return self._deny("run_sql", args, [Reason("privacy_budget", ok.reason)])
                 for o in noised:
                     for r in kept:
-                        r[o.index] = self._noise(r[o.index], o.agg, o.column, bounds, r[-1], eps_q)
+                        if o.agg == "expr":
+                            vals = [
+                                self._noise(
+                                    r[n_out + leaf.hidden], leaf.agg, leaf.column, bounds, r[-1], eps_q, leaf.bounds
+                                )
+                                for leaf in o.leaves
+                            ]
+                            v = evaluate(o.tree, vals)
+                            r[o.index] = None if v is None else float(f"{v:.6g}")
+                        else:
+                            r[o.index] = self._noise(r[o.index], o.agg, o.column, bounds, r[-1], eps_q, o.bounds)
                 eps = need
                 if noised:
                     notes.append(
-                        f"differential privacy: Laplace noise added to {len(noised)} column(s) "
+                        f"differential privacy: Laplace noise added to {n_charges} aggregate(s) "
                         f"(epsilon {eps_q} each, {need:.2f} charged)"
                     )
-            rows = [r[:-1] for r in kept]
+                clamped = sorted(
+                    {f"{c[0]}.{c[1]}" for o in noised for c, b in _clamped(o) if c is not None and b is not None}
+                )
+                if clamped:
+                    notes.append(f"values clamped to operator dp.bounds inside aggregates: {', '.join(clamped)}")
+            rows = [r[:n_out] for r in kept]
             columns = out_cols
         result = StoredResult(
             columns=columns, rows=[[jsonable(v) for v in r] for r in rows], datasets=plan.tables, released_until=0
@@ -289,16 +322,28 @@ class Engine:
         bounds: dict[tuple[str, str], tuple[float, float]],
         support: int,
         eps: float,
+        clamp: tuple[float, float] | None = None,
     ) -> Any:
         if value is None:
             return None
         v = float(value)
         if agg in ("count", "count_star", "count_if", "approx_count_distinct"):
             return max(0, round(v + laplace(1.0 / eps)))
-        lo, hi = bounds.get(column, (0.0, 0.0)) if column else (0.0, 0.0)
-        # sum: one entity can move it by max|value|; avg: by range / n
-        sens = max(abs(lo), abs(hi), 1.0) if agg == "sum" else max(hi - lo, 1e-9) / max(support, 1)
-        return float(f"{v + laplace(sens / eps):.6g}")
+        # operator clamp bounds (values were clamped in SQL) take precedence over the data's own range
+        lo, hi = clamp if clamp else (bounds.get(column, (0.0, 0.0)) if column else (0.0, 0.0))
+        n = max(support, 1)
+        if agg == "sum":  # one entity can move it by max|value|
+            sens = max(abs(lo), abs(hi), 1.0)
+        elif agg in ("variance", "var_samp", "var_pop"):  # (hi-lo)^2 / (n-1) bounds one entity's influence
+            sens = max(hi - lo, 1e-9) ** 2 / max(n - 1, 1)
+        elif agg in ("stddev", "stddev_samp", "stddev_pop"):
+            sens = max(hi - lo, 1e-9) / math.sqrt(max(n - 1, 1))
+        else:  # avg: range / n
+            sens = max(hi - lo, 1e-9) / n
+        out = v + laplace(sens / eps)
+        if agg in VAR_AGGS:
+            out = max(0.0, out)
+        return float(f"{out:.6g}")
 
     def _release_table(
         self,
@@ -447,6 +492,12 @@ class Engine:
     def public_columns(self, dataset: str) -> list[str]:
         p = self._prep(dataset)
         return [c for c in p.columns if p.policy.tag(c) == PUBLIC]
+
+
+def _clamped(o: OutputCol) -> list[tuple[tuple[str, str] | None, tuple[float, float] | None]]:
+    if o.agg == "expr":
+        return [(leaf.column, leaf.bounds) for leaf in o.leaves]
+    return [(o.column, o.bounds)]
 
 
 def _data_dependent(exc: BaseException) -> bool:

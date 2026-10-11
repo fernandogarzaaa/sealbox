@@ -141,7 +141,7 @@ def test_output_meta(guard: SqlGuard) -> None:
         "count(DISTINCT name), max(yr) FROM emp"
     )
     got = [(o.agg, o.sensitive) for o in plan.outputs]
-    assert got == [("avg", True), ("derived", True), ("sum", True), ("count", True), ("derived", False)]
+    assert got == [("avg", True), ("expr", True), ("sum", True), ("count", True), ("derived", False)]
     assert plan.outputs[0].column == ("emp", "salary")
 
 

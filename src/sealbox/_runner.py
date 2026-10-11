@@ -43,6 +43,15 @@ def _preimport() -> None:
         "operator",
         "heapq",
         "bisect",
+        # pre-imported so their bytecode is loaded before the audit hook blocks marshal.loads: inspect is
+        # needed by ast.get_docstring (inspect.cleandoc). It adds no capability the agent lacks already
+        # (sys._getframe exists; inspect.getsource's file reads still go through the open() hook).
+        "inspect",
+        "copy",
+        "pprint",
+        "csv",
+        "dataclasses",
+        "typing",
     ):
         __import__(mod)
     for opt in ("numpy", "pandas"):
