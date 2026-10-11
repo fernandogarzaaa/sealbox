@@ -69,6 +69,10 @@ class Engine:
                 self._prepared[name] = prepare(self.vault, name, self.tokenizer)
             return self._prepared[name]
 
+    def _sensitive(self, name: str) -> bool:
+        p = self._prepared[name]
+        return any(p.policy.tag(c) != PUBLIC for c in p.columns) or len(p.columns) < len(p.meta.get("columns", []))
+
     def _gate(self) -> EgressGate:
         return EgressGate(self._prepared)
 
@@ -197,6 +201,16 @@ class Engine:
                 columns = [d[0] for d in cur.description]
                 raw = cur.fetchmany(10_001)
             except Exception as exc:
+                touches_sensitive = any(self._sensitive(t) for t in plan.tables)
+                if touches_sensitive and _data_dependent(exc):
+                    self.budget.record_data_error()
+                    self._audit("run_sql", args, "error", message=type(exc).__name__, data_dependent=True)
+                    return {
+                        "status": "error",
+                        "error": "query failed at runtime on protected data (details "
+                        "withheld; data-dependent errors are capped per session)",
+                        "budget": self._short_budget(),
+                    }
                 msg = self._sanitize_error(f"{type(exc).__name__}: {exc}", sql, plan.tables)
                 return self._error("run_sql", args, msg)
         finally:
@@ -360,7 +374,7 @@ class Engine:
         admit = self.budget.admit_query()
         if not admit.ok:
             return self._deny("run_python", args, [Reason("leakage_budget", admit.reason)])
-        names = datasets or self.vault.names()
+        names = datasets or [n for n in self.vault.names() if self.vault.policy(n).allow_python]
         try:
             preps = [self._prep(n) for n in names]
         except SealboxError as exc:
@@ -426,6 +440,13 @@ class Engine:
     def public_columns(self, dataset: str) -> list[str]:
         p = self._prep(dataset)
         return [c for c in p.columns if p.policy.tag(c) == PUBLIC]
+
+
+def _data_dependent(exc: BaseException) -> bool:
+    """Conversion/overflow/invalid-input errors depend on cell values; binder/parser errors do not."""
+    names = {c.__name__ for c in type(exc).__mro__}
+    static = {"BinderException", "CatalogException", "ParserException", "SyntaxException", "NotImplementedException"}
+    return not names & static
 
 
 _SQL_HINT = (

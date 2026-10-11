@@ -91,3 +91,11 @@ def test_budget_epsilon_and_limits() -> None:
     assert "error limit" in b2.admit_query().reason
     b2.record_denial()
     assert b2.status()["denials"] == 1 and b2.status()["errors"] == {"used": 1, "limit": 1}
+
+
+def test_data_error_cap() -> None:
+    b = SessionBudget(SessionConfig(max_data_errors=1))
+    assert b.admit_query().ok
+    b.record_data_error()
+    d = b.admit_query()
+    assert not d.ok and "data-dependent" in d.reason and b.errors == 1

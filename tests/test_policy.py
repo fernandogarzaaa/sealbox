@@ -83,4 +83,9 @@ def test_default_policy_docs_and_entity() -> None:
         "table",
     )
     assert t.entity_column == "customer_id"
+    assert t.allow_python is False  # sensitive tables: python is an operator opt-in
+    pub = default_policy(
+        "p", [{"name": "dept", "n_distinct": 3, "n_rows": 90, "is_numeric": False, "avg_len": 4}], "table"
+    )
+    assert pub.allow_python is True and d.allow_python is True
     assert DatasetPolicy(dataset="z").tag("q") == "aggregate_only"

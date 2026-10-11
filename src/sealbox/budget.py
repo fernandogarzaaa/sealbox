@@ -21,6 +21,7 @@ class SessionBudget:
     bytes_released: int = 0
     queries: int = 0
     errors: int = 0
+    data_errors: int = 0
     denials: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -32,6 +33,12 @@ class SessionBudget:
             if self.errors >= self.config.max_errors:
                 return BudgetDecision(
                     False, f"error limit reached ({self.config.max_errors}); errors can be used as an oracle"
+                )
+            if self.data_errors >= self.config.max_data_errors:
+                return BudgetDecision(
+                    False,
+                    f"data-dependent error limit reached ({self.config.max_data_errors}); runtime errors that "
+                    "depend on protected values are an oracle",
                 )
             if self.bytes_released >= self.config.bytes_budget:
                 return BudgetDecision(False, "bytes-of-information budget exhausted")
@@ -66,6 +73,11 @@ class SessionBudget:
         with self._lock:
             self.errors += 1
 
+    def record_data_error(self) -> None:
+        with self._lock:
+            self.data_errors += 1
+            self.errors += 1
+
     def record_denial(self) -> None:
         with self._lock:
             self.denials += 1
@@ -85,5 +97,6 @@ class SessionBudget:
             },
             "queries": {"used": self.queries, "limit": c.max_queries},
             "errors": {"used": self.errors, "limit": c.max_errors},
+            "data_errors": {"used": self.data_errors, "limit": c.max_data_errors},
             "denials": self.denials,
         }

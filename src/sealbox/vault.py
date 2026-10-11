@@ -102,6 +102,7 @@ session:
   bytes_budget: 262144        # total bytes of tool output released per session
   max_queries: 500
   max_errors: 25              # errors are a 1-bit oracle; cap them
+  max_data_errors: 3          # data-dependent SQL errors (cast/overflow) on sensitive tables
   python_timeout_s: 20
   python_memory_mb: 1024
   python_time_quantum_s: 0.5  # run_python latency padded to multiples of this

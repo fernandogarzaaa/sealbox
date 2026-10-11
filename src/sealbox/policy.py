@@ -99,6 +99,7 @@ class SessionConfig:
     bytes_budget: int = 262_144
     max_queries: int = 500
     max_errors: int = 25
+    max_data_errors: int = 3  # data-dependent SQL runtime errors on sensitive tables (1-bit oracle each)
     python_timeout_s: float = 20.0
     python_memory_mb: int = 1024
     python_time_quantum_s: float = 0.5  # pad run_python latency to multiples of this (timing channel)
@@ -168,4 +169,8 @@ def default_policy(dataset: str, column_info: list[dict[str, Any]], kind: str) -
         )
         if pol.entity_column is None and pol.columns[info["name"]] == TOKENIZE and _ENTITY_HINTS.search(info["name"]):
             pol.entity_column = info["name"]
+    if any(tag != PUBLIC for tag in pol.columns.values()):
+        # Agent code over row-level sensitive data cannot be k-anonymized: a boolean result per query is
+        # enough to binary-search any single value. Python over such tables is an explicit operator opt-in.
+        pol.allow_python = False
     return pol

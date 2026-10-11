@@ -185,3 +185,10 @@ def test_jsonable() -> None:
     assert jsonable((1, {"a": 2})) == [1, {"a": 2}]
     assert jsonable(1 / 3) == 0.3333333333
     assert jsonable(object()).startswith("<object")
+
+
+def test_doc_literals() -> None:
+    from sealbox.compute import doc_literals
+
+    code = 'RATE = 0.2875\nN = 12\nBIG = 48151\nTBL = {"atlas": 1.37, "k": 2}\nMSG = "do not share this"\nv = 1.5'
+    assert doc_literals(code) == {"n:0.2875", "n:48151", "n:1.37", "s:do not share this"}

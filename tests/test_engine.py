@@ -113,7 +113,8 @@ def test_sql_rejections_are_denials_and_count_as_errors(engine: Engine) -> None:
 def test_sql_error_messages_are_sanitized(vault: Vault, engine: Engine) -> None:
     out = engine.run_sql("SELECT dept, count(*) FROM people WHERE CAST(notes AS INTEGER) = 1 GROUP BY dept")
     assert out["status"] == "error"
-    assert "routine quarterly" not in out["error"] and "<redacted>" in out["error"]
+    assert "routine quarterly" not in out["error"] and "withheld" in out["error"]
+    assert engine.budget.data_errors == 1
     out2 = engine.run_sql("SELECT dept, count(*) FROM people WHERE nosuchcol = 'abc' GROUP BY dept")
     assert out2["status"] == "error" and "nosuchcol" in out2["error"]
 
@@ -276,3 +277,23 @@ def test_pii_redacted_in_outputs(vault: Vault, engine: Engine, tmp_path: Path) -
     assert any("PII redacted: EMAILx2" in n for n in out["notes"])
     blob = base64.b64encode(b"x").decode()
     assert blob  # keep import used
+
+
+def test_data_dependent_error_oracle_capped(vault: Vault, engine: Engine) -> None:
+    e = fresh(vault, engine, max_data_errors=2)
+    q = "SELECT dept, count(*) FROM people WHERE ln(salary - {x}) > 0 GROUP BY dept"
+    assert e.run_sql(q.format(x=10**9))["status"] == "error"
+    assert e.run_sql(q.format(x=10**9))["status"] == "error"
+    blocked = e.run_sql("SELECT count(*) FROM people")
+    assert blocked["status"] == "denied" and "data-dependent" in blocked["reasons"][0]["detail"]
+    assert e.budget_status()["data_errors"] == {"used": 2, "limit": 2}
+
+
+def test_public_only_table_errors_not_data_capped(vault: Vault, engine: Engine, tmp_path: Path) -> None:
+    (tmp_path / "cats.csv").write_text("color\nred\nblue\n")
+    vault.ingest(tmp_path / "cats.csv")
+    set_policy(vault, "cats", columns={"color": "public"})
+    e = fresh(vault, engine)
+    out = e.run_sql("SELECT CAST(color AS INTEGER) FROM cats")
+    assert out["status"] == "error" and "Conversion" in out["error"] and e.budget.data_errors == 0
+    assert "'<redacted>'" in out["error"] or "red" not in out["error"]

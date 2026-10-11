@@ -79,6 +79,9 @@ def vault(tmp_path: Path, keys: crypto.LocalKeyProvider) -> Vault:
     people = tmp_path / "people.csv"
     write_people(people)
     v.ingest(people)
+    # tests exercise run_python over the table, which is an operator opt-in for sensitive tables
+    pol = v.policy_path("people")
+    pol.write_text(pol.read_text().replace("allow_python: false", "allow_python: true"))
     code = tmp_path / "secret_repo"
     code.mkdir()
     (code / "scoring.py").write_text(SECRET_CODE)

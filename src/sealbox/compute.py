@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import decimal
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -59,6 +60,25 @@ def jsonable(v: Any) -> Any:
     return str(v)
 
 
+_NUM_LIT = re.compile(r"(?<![\w.])-?\d+\.\d+(?![\w.])|(?<![\w.])-?\d{4,}(?![\w.])")
+_STR_LIT = re.compile(r"\"([^\"\n]*)\"|'([^'\n]*)'")
+
+
+def doc_literals(text: str) -> set[str]:
+    """Numeric constants and string literals in code/docs: the 'magic numbers' worth protecting."""
+    out: set[str] = set()
+    for m in _NUM_LIT.finditer(text):
+        nv = norm_value(float(m.group(0)))
+        if nv is not None:
+            out.add(nv)
+    for m in _STR_LIT.finditer(text):
+        lit = m.group(1) if m.group(1) is not None else m.group(2)
+        nv = norm_value(lit) if 8 <= len(lit) <= 200 else None
+        if nv is not None:
+            out.add(nv)
+    return out
+
+
 @dataclass
 class Prepared:
     """One dataset, decrypted and shaped by its policy; cached for the session."""
@@ -81,6 +101,7 @@ def prepare(vault: Vault, name: str, tokenizer: Tokenizer) -> Prepared:
     ds: Dataset = vault.load(name)
     policy = vault.policy(name)
     fp = FingerprintIndex(n=policy.leak.shingle_tokens)
+    protected: set[str] = set()
     conn = duckdb.connect()
     try:
         if ds.kind == "docs":
@@ -99,6 +120,7 @@ def prepare(vault: Vault, name: str, tokenizer: Tokenizer) -> Prepared:
             }
             for text in docs.values():
                 fp.add_text(text)
+                protected |= doc_literals(text)
         else:
             docs = {}
             parquet_to_conn(conn, "src", ds.payload)
@@ -111,7 +133,6 @@ def prepare(vault: Vault, name: str, tokenizer: Tokenizer) -> Prepared:
 
     visible = [c for c in raw_cols if policy.tag(c) != DENY]
     idx = {c: i for i, c in enumerate(raw_cols)}
-    protected: set[str] = set()
     token_map: dict[str, str] = {}
     rows: list[tuple[Any, ...]] = []
     for row in raw_rows:
@@ -119,7 +140,7 @@ def prepare(vault: Vault, name: str, tokenizer: Tokenizer) -> Prepared:
         for c in raw_cols:
             v = row[idx[c]]
             tag = policy.tag(c)
-            if tag != PUBLIC:
+            if tag != PUBLIC and ds.kind != "docs":
                 nv = norm_value(v)
                 if nv is not None:
                     protected.add(nv)
