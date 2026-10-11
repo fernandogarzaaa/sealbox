@@ -5,6 +5,9 @@ documents, long text cells):
 
 * **Exact shingles**: hashed n-grams of normalized tokens. Catches verbatim and
   whitespace/case-reformatted copies, even a few lines long.
+* **Character shingles**: 24-char windows of the text with ALL whitespace removed and case
+  folded. Catches spaced-out / re-wrapped copies, and (accumulated per session by the
+  engine) content smuggled out a few characters at a time.
 * **Structural MinHash**: identifiers, numbers and string literals collapse to
   placeholders, then windows of tokens are MinHashed. Catches near-verbatim copies
   (renamed variables, changed constants).
@@ -41,6 +44,8 @@ _MASK = (1 << 61) - 1
 _NUM_PERM = 64
 _WINDOW = 40
 _STEP = 10
+CHAR_N = 24
+_WS_RE = re.compile(r"\s+")
 
 _B64_RE = re.compile(r"[A-Za-z0-9+/_-]{16,}={0,2}")
 _HEX_RE = re.compile(r"(?:[0-9a-fA-F]{2}[\s:,]?){12,}")
@@ -68,6 +73,17 @@ def structural(toks: list[str]) -> list[str]:
 
 def _h(s: str) -> int:
     return int.from_bytes(hashlib.blake2b(s.encode(), digest_size=8).digest(), "big")
+
+
+def squash(text: str) -> str:
+    return _WS_RE.sub("", text).lower()
+
+
+def char_shingles(text: str, n: int = CHAR_N) -> set[int]:
+    sq = squash(text)
+    if len(sq) < n:
+        return set()
+    return {_h(sq[i : i + n]) for i in range(len(sq) - n + 1)}
 
 
 def shingles(toks: list[str], n: int) -> set[int]:
@@ -109,12 +125,14 @@ class FingerprintIndex:
     n: int = 8
     exact: set[int] = field(default_factory=set)
     sigs: list[tuple[int, ...]] = field(default_factory=list)
+    chars: set[int] = field(default_factory=set)
     # LSH buckets: band -> hash -> signature indexes
     _bands: dict[tuple[int, int], list[int]] = field(default_factory=dict)
 
     def add_text(self, text: str) -> None:
         toks = tokens(text)
         self.exact |= shingles(toks, self.n)
+        self.chars |= char_shingles(text)
         st = structural(toks)
         for win in _windows(st):
             sig = minhash(shingles(win, 5))
@@ -129,6 +147,10 @@ class FingerprintIndex:
 
     def shared_exact(self, text: str) -> int:
         return len(shingles(tokens(text), self.n) & self.exact)
+
+    def char_hits(self, text: str) -> set[int]:
+        """Hashes of protected whitespace-free 24-char windows that appear in ``text``."""
+        return char_shingles(text) & self.chars if self.chars else set()
 
     def max_similarity(self, text: str) -> float:
         best = 0.0

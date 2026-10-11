@@ -20,6 +20,7 @@ from .budget import SessionBudget
 from .compute import Prepared, jsonable, locked_connection, prepare
 from .crypto import KeyProvider
 from .errors import QueryRejected, SealboxError
+from .fingerprint import CHAR_N, squash
 from .gate import EgressGate, GateResult, Reason, canonical_bytes
 from .policy import PUBLIC, SessionConfig
 from .sandbox import pad_latency, run_python
@@ -57,6 +58,8 @@ class Engine:
         self.tokenizer = Tokenizer(keys.derive("tokenize"))
         self._prepared: dict[str, Prepared] = {}
         self._results: dict[str, StoredResult] = {}
+        self._char_hits: dict[str, set[int]] = {}  # cumulative content-fingerprint matches this session
+        self._stream_tail = ""  # end of the last released python output (seam checks for chunked smuggling)
         self._conn: Any = None
         self._conn_key: tuple[str, ...] = ()
         self._lock = threading.RLock()
@@ -416,13 +419,22 @@ class Engine:
             payload["stdout"] = res.stdout
         rows_hint = len(res.result) if isinstance(res.result, (list, dict)) else None
         gate = self._gate().inspect(
-            payload, names, check_protected=True, max_rows=rows_hint, origin="python result", allow_tokens=False
+            payload,
+            names,
+            check_protected=True,
+            max_rows=rows_hint,
+            origin="python result",
+            allow_tokens=False,
+            session_hits=self._char_hits,
+            stream_tail=self._stream_tail,
         )
         if not gate.allowed:
             return self._deny(
                 "run_python", args, gate.reasons, "Return aggregates/findings ABOUT the data, not the data itself."
             )
         body = dict(gate.payload)
+        released = "".join(s for s in _strings(body) if isinstance(s, str))
+        self._stream_tail = squash(self._stream_tail + released)[-2 * CHAR_N :]
         body["isolation"] = res.isolation
         if res.warnings:
             body["warnings"] = res.warnings
@@ -440,6 +452,16 @@ class Engine:
     def public_columns(self, dataset: str) -> list[str]:
         p = self._prep(dataset)
         return [c for c in p.columns if p.policy.tag(c) == PUBLIC]
+
+
+def _strings(obj: Any) -> list[str]:
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [s for v in obj.values() for s in _strings(v)]
+    if isinstance(obj, list | tuple):
+        return [s for v in obj for s in _strings(v)]
+    return []
 
 
 def _data_dependent(exc: BaseException) -> bool:

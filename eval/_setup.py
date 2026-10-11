@@ -24,6 +24,21 @@ def demo_vault() -> tuple[Vault, crypto.LocalKeyProvider, Path]:
     return vault, keys, tmp
 
 
+_WARM: dict[int, Engine] = {}
+
+
 def fresh_engine(vault: Vault, keys: crypto.LocalKeyProvider, **cfg: object) -> Engine:
+    """New session (fresh budget/results/audit session) that reuses the decrypted, read-only dataset cache.
+
+    Prepared datasets hold no per-session state, so sharing them only skips ~2.5 s of decrypt+shape work.
+    """
     cfg.setdefault("python_time_quantum_s", 0)
-    return Engine(vault, keys, SessionConfig(**cfg))  # type: ignore[arg-type]
+    eng = Engine(vault, keys, SessionConfig(**cfg))  # type: ignore[arg-type]
+    warm = _WARM.get(id(vault))
+    if warm is None:
+        for n in vault.names():
+            eng._prep(n)
+        _WARM[id(vault)] = eng
+    else:
+        eng._prepared = dict(warm._prepared)
+    return eng

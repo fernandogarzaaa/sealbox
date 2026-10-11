@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import decimal
+import importlib.util
 import math
 import re
+import sys
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -183,17 +187,41 @@ def prepare(vault: Vault, name: str, tokenizer: Tokenizer) -> Prepared:
 def locked_connection(prepared: list[Prepared]) -> duckdb.DuckDBPyConnection:
     """In-memory DuckDB with only the policy-shaped tables, external access disabled and config locked."""
     conn = duckdb.connect(":memory:", config={"threads": 2, "memory_limit": "1GB"})
-    for p in prepared:
-        cols = ", ".join(f'"{c}" {p.column_types[c]}' for c in p.columns)
-        conn.execute(f'CREATE TABLE "{p.name}" ({cols})')
-        if p.rows:
-            placeholders = ", ".join("?" for _ in p.columns)
-            conn.executemany(f'INSERT INTO "{p.name}" VALUES ({placeholders})', [list(r) for r in p.rows])
+    with _no_pandas_probe():
+        _load_tables(conn, prepared)
     conn.execute("SET enable_external_access = false")
     conn.execute("SET autoinstall_known_extensions = false")
     conn.execute("SET autoload_known_extensions = false")
     conn.execute("SET lock_configuration = true")
     return conn
+
+
+@contextlib.contextmanager
+def _no_pandas_probe() -> Iterator[None]:
+    """duckdb tries ``import pandas`` for every bound parameter; when pandas is absent each failed import
+    walks sys.path (~70 us x every cell). Make the import fail fast for the duration of the load."""
+    if "pandas" in sys.modules or importlib.util.find_spec("pandas") is not None:
+        yield
+        return
+    sys.modules["pandas"] = None  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        sys.modules.pop("pandas", None)
+
+
+def _load_tables(conn: duckdb.DuckDBPyConnection, prepared: list[Prepared]) -> None:
+    for p in prepared:
+        cols = ", ".join(f'"{c}" {p.column_types[c]}' for c in p.columns)
+        conn.execute(f'CREATE TABLE "{p.name}" ({cols})')
+        if p.rows:
+            # multi-row VALUES batches: executemany is ~100x slower (one statement per row)
+            one = "(" + ", ".join("?" for _ in p.columns) + ")"
+            batch = max(1, 2000 // max(1, len(p.columns)))
+            for i in range(0, len(p.rows), batch):
+                chunk = p.rows[i : i + batch]
+                params = [v for r in chunk for v in r]
+                conn.execute(f'INSERT INTO "{p.name}" VALUES ' + ", ".join([one] * len(chunk)), params)
 
 
 def tag_summary(p: Prepared) -> dict[str, str]:

@@ -1,17 +1,17 @@
+# never commit key material or vaults
+*.egg-info/
+*.key
+*.pyc
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.sealbox_master.key
 .venv/
 __pycache__/
-*.pyc
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-dist/
 build/
-*.egg-info/
-# never commit key material or vaults
-*.key
-.sealbox_master.key
-vault/
 demo_vault/
+dist/
+htmlcov/
 redteam/results/*.tmp
+vault/

@@ -49,6 +49,9 @@ class LeakConfig:
     max_shared_shingles: int = 2  # more shared exact shingles than this -> deny
     minhash_threshold: float = 0.55  # estimated Jaccard of structural windows -> deny
     opaque_blob_min_len: int = 64  # base64/hex runs at least this long that don't decode to text -> deny
+    # whitespace/case-insensitive character fingerprints, accumulated over the whole session so content
+    # smuggled in small chunks (or spaced out) is caught: more distinct matching 24-char shingles -> deny
+    max_session_char_shingles: int = 16
 
 
 @dataclass

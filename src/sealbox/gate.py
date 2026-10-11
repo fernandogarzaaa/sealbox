@@ -67,6 +67,7 @@ class EffectivePolicy:
             max_shared_shingles=min(p.leak.max_shared_shingles for p in policies),
             minhash_threshold=min(p.leak.minhash_threshold for p in policies),
             opaque_blob_min_len=min(p.leak.opaque_blob_min_len for p in policies),
+            max_session_char_shingles=min(p.leak.max_session_char_shingles for p in policies),
         )
         return cls(
             max_output_rows=min(p.max_output_rows for p in policies),
@@ -129,7 +130,13 @@ class EgressGate:
         max_rows: int | None = None,
         origin: str = "result",
         allow_tokens: bool = True,
+        session_hits: dict[str, set[int]] | None = None,
+        stream_tail: str = "",
     ) -> GateResult:
+        """``session_hits`` (dataset -> matched char-shingle hashes released so far) enables cumulative
+        leak accounting; it is updated in place only when the output is allowed. ``stream_tail`` is the end
+        of the previously released text, so content split across consecutive outputs is fingerprinted at
+        the seams."""
         preps = [self.prepared[d] for d in datasets if d in self.prepared]
         pol = EffectivePolicy.combine([p.policy for p in preps])
         reasons: list[Reason] = []
@@ -238,6 +245,7 @@ class EgressGate:
                     )
 
         # 5. proprietary content fingerprints, including encoded forms
+        char_new: dict[str, set[int]] = {}
         if pol.leak.enabled and strings:
             text = "\n".join(strings)
             decoded = expand_encodings(text, pol.leak.opaque_blob_min_len)
@@ -273,8 +281,28 @@ class EgressGate:
                             f"{p.name!r} (structural similarity {sim:.2f})",
                         )
                     )
+                    continue
+                hits: set[int] = set()
+                for t in [*variants, *(stream_tail + v for v in variants if stream_tail)]:
+                    hits |= p.fingerprints.char_hits(t)
+                prior = session_hits.get(p.name, set()) if session_hits is not None else set()
+                total = len(prior | hits)
+                if total > pol.leak.max_session_char_shingles:
+                    reasons.append(
+                        Reason(
+                            "content_leak",
+                            f"output (together with earlier outputs this session) reproduces protected content "
+                            f"from dataset {p.name!r} ({total} matching character fingerprints; chunked, "
+                            "spaced-out or re-encoded copies count)",
+                        )
+                    )
+                elif hits:
+                    char_new[p.name] = hits
         if reasons:
             return GateResult(False, reasons=reasons)
+        if session_hits is not None:
+            for name, h in char_new.items():
+                session_hits.setdefault(name, set()).update(h)
         return GateResult(True, payload=payload, notes=notes, nbytes=canonical_bytes(payload))
 
 
