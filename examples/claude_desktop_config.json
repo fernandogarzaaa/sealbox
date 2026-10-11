@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "sealbox": {
+      "command": "sealbox",
+      "args": ["--vault", "/ABSOLUTE/PATH/TO/vault", "serve"],
+      "env": {
+        "SEALBOX_KEYFILE": "/ABSOLUTE/PATH/TO/.config/sealbox/master.key"
+      }
+    }
+  }
+}

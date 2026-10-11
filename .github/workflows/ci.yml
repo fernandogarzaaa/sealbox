@@ -1,0 +1,30 @@
+# Manual only: run from the Actions tab ("Run workflow"). No push/PR triggers on purpose.
+name: ci
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e '.[dev]'
+      - name: Lint
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+      - name: Type-check
+        run: python -m mypy
+      - name: Test
+        run: python -m pytest -q --cov=sealbox --cov-report=term
