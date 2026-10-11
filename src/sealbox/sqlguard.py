@@ -98,6 +98,7 @@ DP_AGGS = frozenset({"count", "count_star", "sum", "avg", "mean", "count_if", "a
 # Spread aggregates: DP-noised only when the operator set clamp bounds for the column (dp.bounds).
 VAR_AGGS = frozenset({"stddev", "stddev_samp", "stddev_pop", "variance", "var_samp", "var_pop"})
 LEAF_AGGS = DP_AGGS | VAR_AGGS
+_LENGTH_FUNCS = frozenset({"length", "char_length", "strlen", "len", "character_length"})
 _COUNTING = frozenset({"count", "count_star", "count_if", "approx_count_distinct"})
 _ARITH = frozenset({"+", "-", "*", "/"})
 MAX_LEAVES = 8
@@ -509,10 +510,10 @@ class SqlGuard:
         )
         fname = str(expr.get("function_name", "")).lower() if expr.get("class") == "FUNCTION" else ""
         if fname in DP_AGGS:
-            column, bounds, ok = self._leaf_column(expr, fname, aliases, tables)
+            column, bounds, ok, clamp = self._leaf_column(expr, fname, aliases, tables)
             if not ok:
                 return OutputCol(index, "derived", None, sensitive)
-            if bounds is not None and column is not None:
+            if clamp and bounds is not None:
                 self._clamp(expr, bounds)
             return OutputCol(index, fname, column, sensitive, bounds=bounds)
         if is_agg and sensitive:
@@ -524,39 +525,52 @@ class SqlGuard:
 
     def _leaf_column(
         self, fn: dict[str, Any], fname: str, aliases: dict[str, str], tables: list[str]
-    ) -> tuple[tuple[str, str] | None, tuple[float, float] | None, bool]:
-        """(column, clamp bounds, calibratable) for a DP aggregate. Counting aggregates are always
-        calibratable (sensitivity 1). Value aggregates are calibratable over a plain column (operator dp.bounds,
-        or the column's range) or over a CASE bucket with numeric constant results (bounds = their range);
-        anything else (e.g. ``sum(salary * 1000)``) could rescale values past the calibrated sensitivity."""
+    ) -> tuple[tuple[str, str] | None, tuple[float, float] | None, bool, bool]:
+        """(column, bounds, calibratable, clamp-in-SQL) for a DP aggregate.
+
+        Counting aggregates are always calibratable (sensitivity 1). Value aggregates are calibratable over a
+        plain column (operator dp.bounds, else the column's range), over ``length(col)`` (dp.bounds key
+        ``length(col)``, else the observed maximum rounded up), or over a CASE bucket with numeric constant
+        results (bounds = their range). Anything else (e.g. ``sum(salary * 1000)``) could rescale values past
+        the calibrated sensitivity, so it is not."""
         inner: list[_Ref] = []
         self._walk_expr(fn.get("children", []), "select", fname, aliases, tables, inner)
         column = (inner[0].table, inner[0].column) if len(inner) == 1 else None
         if fname in _COUNTING:
-            return column, None, True
+            return column, None, True, False
         children = fn.get("children") or []
         if len(children) != 1:
-            return column, None, False
+            return column, None, False, False
         child = children[0]
         if child.get("class") == "COLUMN_REF" and column:
             b = self.policies[column[0]].dp.bounds.get(column[1])
-            return column, ((float(b[0]), float(b[1])) if b else None), True
+            return column, ((float(b[0]), float(b[1])) if b else None), True, bool(b)
+        if (
+            child.get("class") == "FUNCTION"
+            and str(child.get("function_name", "")).lower() in _LENGTH_FUNCS
+            and len(child.get("children") or []) == 1
+            and child["children"][0].get("class") == "COLUMN_REF"
+            and column
+        ):
+            key = f"length({column[1]})"
+            lb: Any = self.policies[column[0]].dp.bounds.get(key) or self.bounds.get((column[0], key))
+            if not lb:
+                return column, None, False, False
+            return None, (float(lb[0]), float(lb[1])), True, True
         if child.get("class") == "CASE" and self._is_bucket(child):
             vals = [c.get("then_expr") for c in child.get("case_checks", [])] + [child.get("else_expr")]
             nums = []
             for v in vals:
-                if v is None:
+                if v is None or (v.get("value") or {}).get("is_null"):
                     continue
                 x = (v.get("value") or {}).get("value")
-                if (v.get("value") or {}).get("is_null"):
-                    continue
                 if not isinstance(x, (int, float)) or isinstance(x, bool):
-                    return column, None, False
+                    return column, None, False, False
                 nums.append(float(x))
             if nums:
                 lo, hi = min(nums), max(nums)
-                return None, (lo, hi if hi > lo else lo + 1.0), True
-        return column, None, False
+                return None, (lo, hi if hi > lo else lo + 1.0), True, False
+        return column, None, False, False
 
     @staticmethod
     def _clamp(fn: dict[str, Any], bounds: tuple[float, float]) -> None:
@@ -589,12 +603,12 @@ class SqlGuard:
         if fname in LEAF_AGGS:
             if len(leaves) >= MAX_LEAVES:
                 return None
-            column, bounds, ok = self._leaf_column(expr, fname, aliases, tables)
+            column, bounds, ok, clamp = self._leaf_column(expr, fname, aliases, tables)
             if not ok:
                 return None
             leaf_expr = copy.deepcopy(expr)
             leaf_expr["alias"] = f"__sb_leaf_{len(hidden)}"
-            if bounds is not None and column is not None:
+            if clamp and bounds is not None:
                 self._clamp(leaf_expr, bounds)
             leaves.append(Leaf(fname, column, bounds, len(hidden)))
             hidden.append(leaf_expr)

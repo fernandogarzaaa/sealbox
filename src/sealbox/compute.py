@@ -16,7 +16,7 @@ from typing import Any
 import duckdb
 
 from .fingerprint import FingerprintIndex
-from .policy import AGGREGATE_ONLY, DENY, PUBLIC, TOKENIZE, DatasetPolicy
+from .policy import AGGREGATE_ONLY, DENY, PUBLIC, TOKENIZE, DatasetPolicy, nice_bounds
 from .tokenizer import Tokenizer
 from .vault import Dataset, Vault, parquet_to_conn
 
@@ -163,10 +163,15 @@ def prepare(vault: Vault, name: str, tokenizer: Tokenizer) -> Prepared:
     for info in ds.meta.get("columns", []):
         if info.get("is_numeric") and info.get("min") is not None:
             bounds[info["name"]] = (float(info["min"]), float(info["max"]))
+    for c in visible:
+        if policy.tag(c) == AGGREGATE_ONLY and types.get(c, "").upper().startswith("VARCHAR"):
+            longest = max((len(r[idx[c]]) for r in raw_rows if isinstance(r[idx[c]], str)), default=0)
+            # coarse (outward-rounded) bound for DP over length(col); operators can pin it in dp.bounds
+            bounds[f"length({c})"] = (0.0, float(nice_bounds(0.0, float(longest))[1]))
     if ds.kind == "docs":
         n_bytes = [r[3] for r in raw_rows]
         n_lines = [r[2] for r in raw_rows]
-        bounds = {"n_bytes": (min(n_bytes), max(n_bytes)), "n_lines": (min(n_lines), max(n_lines))}
+        bounds.update({"n_bytes": (min(n_bytes), max(n_bytes)), "n_lines": (min(n_lines), max(n_lines))})
     vis_types = {c: ("VARCHAR" if policy.tag(c) == TOKENIZE else types[c]) for c in visible}
     return Prepared(
         name=name,
