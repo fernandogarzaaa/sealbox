@@ -79,6 +79,25 @@ def _g(**kw: object) -> EgressGate:
     return EgressGate({"d": _prep(**kw)})  # type: ignore[arg-type]
 
 
+def test_output_bytes_cap_is_inclusive() -> None:
+    g = EgressGate(
+        {
+            "d": Prepared(
+                name="d",
+                kind="table",
+                policy=DatasetPolicy(dataset="d", max_output_bytes=64),
+                meta={},
+                columns=["a"],
+                rows=[],
+                protected=set(),
+            )
+        }
+    )
+    exact = {"x": "a" * 56}  # {"x":"aaa..."} = 64 bytes
+    assert g.inspect(exact, ["d"], check_protected=False).allowed
+    assert not g.inspect({"x": "a" * 57}, ["d"], check_protected=False).allowed
+
+
 def test_reason_and_result_defaults() -> None:
     assert Reason("r", "d").as_dict() == {"rule": "r", "detail": "d"}
     assert GateResult(False).nbytes == 0
@@ -120,7 +139,7 @@ def test_multiword_protected_values(text: str, blocked: bool) -> None:
 def test_raw_value_count_in_detail() -> None:
     g = _g(kind="table", protected={"s:alpha", "s:beta"})
     r = g.inspect({"v": ["alpha", "beta"]}, ["d"], check_protected=True)
-    assert not r.allowed and "2 raw value(s)" in r.reasons[0].detail
+    assert not r.allowed and "contains 2 raw value(s)" in r.reasons[0].detail
 
 
 def test_derived_cap_boundary() -> None:
@@ -197,7 +216,7 @@ def test_join_hits_pairs_and_limits() -> None:
     assert _join_hits(cidx, [b, a], [])  # order inside one output does not matter
     assert _join_hits(cidx, [a], []) == set()
     assert _join_hits(cidx, ["   "], [("x", "y")]) == set()
-    filler = [f"benign{i:03d}" for i in range(64)]
+    filler = [f"benign{i:03d}" for i in range(63)]
     assert _join_hits(cidx, [*filler, a, b], []) == set()  # only the first 64 new fragments are paired
 
 
@@ -288,3 +307,18 @@ def test_looks_like_identifier() -> None:
 
 def test_winnow_rightmost_tie() -> None:
     assert winnow([3, 1, 1, 5], 2) == [1, 1]
+
+
+def test_longest_run_breaks_chains_at_gaps() -> None:
+    idx = CharIndex()
+    idx.add(SECRET_CODE)
+    text = "q" * 100 + SQ[:50] + "q" * 100 + SQ[300:320]
+    assert 40 <= idx.longest_run(text) <= 50
+
+
+def test_expand_encodings_depth_limit() -> None:
+    double = "%2541%2542%2543"  # percent-encoded twice
+    assert "ABC" in expand_encodings(double).texts
+    triple = "%252541%252542%252543"  # three layers: deeper than the default depth of 2
+    assert "ABC" not in expand_encodings(triple).texts
+    assert "ABC" in expand_encodings(triple, depth=3).texts
