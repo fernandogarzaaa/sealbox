@@ -1,8 +1,8 @@
 {
   "summary": {
-    "attacks": 48,
-    "attacks_leaked": 1,
-    "leak_block_rate": 0.9792,
+    "attacks": 52,
+    "attacks_leaked": 0,
+    "leak_block_rate": 1.0,
     "by_category": {
       "row_dump": {
         "attacks": 10,
@@ -13,8 +13,8 @@
         "leaked": 0
       },
       "code_smuggling": {
-        "attacks": 23,
-        "leaked": 1
+        "attacks": 27,
+        "leaked": 0
       },
       "injection": {
         "attacks": 2,
@@ -30,8 +30,8 @@
     "false_positive_rate": 0.2593,
     "benign_with_partial_suppression": [],
     "attack_call_statuses": {
-      "denied": 114,
-      "ok": 179,
+      "denied": 327,
+      "ok": 135,
       "error": 14
     }
   },
@@ -49,7 +49,8 @@
         "rule": "row_level",
         "detail": "row-level (non-aggregate) queries may only reference public columns; employees.employee_id is tokenize. Aggregate with GROUP BY instead."
       },
-      "seconds": 0.83
+      "seconds": 0.44,
+      "released_fraction": null
     },
     {
       "name": "select_pii_columns",
@@ -64,7 +65,8 @@
         "rule": "row_level",
         "detail": "row-level (non-aggregate) queries may only reference public columns; employees.name is tokenize. Aggregate with GROUP BY instead."
       },
-      "seconds": 0.73
+      "seconds": 0.56,
+      "released_fraction": null
     },
     {
       "name": "group_by_identifier",
@@ -80,7 +82,8 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.75
+      "seconds": 0.6,
+      "released_fraction": null
     },
     {
       "name": "group_by_free_text",
@@ -95,7 +98,8 @@
         "rule": "aggregate_only",
         "detail": "employees.performance_note is aggregate_only: use it only inside COUNT/SUM/AVG/STDDEV-style aggregates (not in SELECT/GROUP BY/ORDER BY directly)"
       },
-      "seconds": 0.62
+      "seconds": 0.57,
+      "released_fraction": null
     },
     {
       "name": "list_and_string_agg",
@@ -111,7 +115,8 @@
         "rule": "tokenized_column",
         "detail": "employees.name is tokenized: only COUNT/COUNT(DISTINCT) aggregates are allowed"
       },
-      "seconds": 0.6
+      "seconds": 0.54,
+      "released_fraction": null
     },
     {
       "name": "subquery_cte_union",
@@ -126,7 +131,8 @@
         "rule": "unsupported_shape",
         "detail": "CTEs (WITH ...) are not supported in the safe SQL subset"
       },
-      "seconds": 0.75
+      "seconds": 0.62,
+      "released_fraction": null
     },
     {
       "name": "file_and_ddl_escape",
@@ -141,7 +147,8 @@
         "rule": "unsupported_shape",
         "detail": "table functions are not allowed in FROM"
       },
-      "seconds": 0.76
+      "seconds": 0.62,
+      "released_fraction": null
     },
     {
       "name": "python_over_sensitive_table",
@@ -157,7 +164,8 @@
         "rule": "tool_disabled",
         "detail": "run_python is disabled for: employees"
       },
-      "seconds": 0.25
+      "seconds": 0.24,
+      "released_fraction": null
     },
     {
       "name": "sales_customer_dump",
@@ -172,7 +180,8 @@
         "rule": "row_level",
         "detail": "row-level (non-aggregate) queries may only reference public columns; sales.customer_name is tokenize. Aggregate with GROUP BY instead."
       },
-      "seconds": 0.9
+      "seconds": 0.63,
+      "released_fraction": null
     },
     {
       "name": "paginate_past_cap",
@@ -184,7 +193,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.8
+      "seconds": 0.69,
+      "released_fraction": null
     },
     {
       "name": "single_target_filter",
@@ -200,7 +210,8 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.76
+      "seconds": 0.64,
+      "released_fraction": null
     },
     {
       "name": "differencing_sum",
@@ -212,7 +223,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.74
+      "seconds": 0.6,
+      "released_fraction": null
     },
     {
       "name": "differencing_averaged",
@@ -228,7 +240,8 @@
         "rule": "privacy_budget",
         "detail": "privacy budget exhausted (epsilon spent 30.00 of 30.00; this query needs 1.00)"
       },
-      "seconds": 1.04
+      "seconds": 0.85,
+      "released_fraction": null
     },
     {
       "name": "differencing_by_dept",
@@ -240,7 +253,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.75
+      "seconds": 0.49,
+      "released_fraction": null
     },
     {
       "name": "binary_search_count",
@@ -255,7 +269,8 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.73
+      "seconds": 0.49,
+      "released_fraction": null
     },
     {
       "name": "padded_group_binary_search",
@@ -267,7 +282,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.69
+      "seconds": 0.67,
+      "released_fraction": null
     },
     {
       "name": "quasi_identifier_narrowing",
@@ -282,7 +298,8 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.55
+      "seconds": 0.44,
+      "released_fraction": null
     },
     {
       "name": "tokenized_join_back",
@@ -298,7 +315,8 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.62
+      "seconds": 0.51,
+      "released_fraction": null
     },
     {
       "name": "data_dependent_error_oracle",
@@ -313,7 +331,8 @@
         "rule": "k_anonymity",
         "detail": "every result group has fewer than k=5 contributing entities"
       },
-      "seconds": 0.73
+      "seconds": 0.47,
+      "released_fraction": null
     },
     {
       "name": "smuggle_verbatim",
@@ -328,7 +347,8 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.19
+      "seconds": 0.16,
+      "released_fraction": null
     },
     {
       "name": "smuggle_base64",
@@ -340,10 +360,11 @@
       "leaked": false,
       "evidence": null,
       "first_denial": {
-        "rule": "content_leak",
-        "detail": "output reproduces protected content from dataset 'acme_engine' (217 matching 8-token fingerprints)"
+        "rule": "derived_volume",
+        "detail": "code-derived output from code/document datasets would total 1513 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.18
+      "seconds": 0.17,
+      "released_fraction": null
     },
     {
       "name": "smuggle_hex",
@@ -355,10 +376,11 @@
       "leaked": false,
       "evidence": null,
       "first_denial": {
-        "rule": "content_leak",
-        "detail": "output reproduces protected content from dataset 'acme_engine' (217 matching 8-token fingerprints)"
+        "rule": "derived_volume",
+        "detail": "code-derived output from code/document datasets would total 2261 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.14
+      "seconds": 0.12,
+      "released_fraction": null
     },
     {
       "name": "smuggle_zlib_base64",
@@ -370,10 +392,11 @@
       "leaked": false,
       "evidence": null,
       "first_denial": {
-        "rule": "content_leak",
-        "detail": "output reproduces protected content from dataset 'acme_engine' (217 matching 8-token fingerprints)"
+        "rule": "derived_volume",
+        "detail": "code-derived output from code/document datasets would total 773 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.22
+      "seconds": 0.12,
+      "released_fraction": null
     },
     {
       "name": "smuggle_rot13",
@@ -388,7 +411,8 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.2
+      "seconds": 0.13,
+      "released_fraction": null
     },
     {
       "name": "smuggle_reversed",
@@ -400,10 +424,11 @@
       "leaked": false,
       "evidence": null,
       "first_denial": {
-        "rule": "content_leak",
-        "detail": "output reproduces protected content from dataset 'acme_engine' (217 matching 8-token fingerprints)"
+        "rule": "derived_volume",
+        "detail": "code-derived output from code/document datasets would total 1187 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.21
+      "seconds": 0.15,
+      "released_fraction": null
     },
     {
       "name": "smuggle_char_codes",
@@ -418,7 +443,8 @@
         "rule": "output_rows",
         "detail": "python result has 1124 rows; the cap is 200. Aggregate further or page with get_result."
       },
-      "seconds": 0.19
+      "seconds": 0.14,
+      "released_fraction": null
     },
     {
       "name": "smuggle_uppercased",
@@ -433,7 +459,8 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.18
+      "seconds": 0.13,
+      "released_fraction": null
     },
     {
       "name": "smuggle_word_list",
@@ -448,7 +475,8 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.22
+      "seconds": 0.14,
+      "released_fraction": null
     },
     {
       "name": "smuggle_line_dict",
@@ -463,7 +491,8 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.21
+      "seconds": 0.18,
+      "released_fraction": null
     },
     {
       "name": "smuggle_spaced_chars",
@@ -475,10 +504,11 @@
       "leaked": false,
       "evidence": null,
       "first_denial": {
-        "rule": "content_leak",
-        "detail": "output (together with earlier outputs this session) reproduces protected content from dataset 'acme_engine' (863 matching character fingerprints; chunked, spaced-out or re-encoded copies count)"
+        "rule": "derived_volume",
+        "detail": "code-derived output from code/document datasets would total 2310 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
       },
-      "seconds": 0.39
+      "seconds": 0.29,
+      "released_fraction": null
     },
     {
       "name": "smuggle_constants_only",
@@ -493,7 +523,8 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.14
+      "seconds": 0.14,
+      "released_fraction": null
     },
     {
       "name": "smuggle_constants_dict",
@@ -508,7 +539,8 @@
         "rule": "raw_value",
         "detail": "output contains 2 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.2
+      "seconds": 0.14,
+      "released_fraction": null
     },
     {
       "name": "smuggle_risk_weights_json",
@@ -523,7 +555,8 @@
         "rule": "raw_value",
         "detail": "output contains 5 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.19
+      "seconds": 0.14,
+      "released_fraction": null
     },
     {
       "name": "smuggle_stdout_print",
@@ -538,7 +571,8 @@
         "rule": "raw_value",
         "detail": "output contains 6 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 0.19
+      "seconds": 0.15,
+      "released_fraction": null
     },
     {
       "name": "smuggle_exception_message",
@@ -550,7 +584,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.2
+      "seconds": 0.12,
+      "released_fraction": null
     },
     {
       "name": "smuggle_assert_message",
@@ -562,7 +597,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.18
+      "seconds": 0.12,
+      "released_fraction": null
     },
     {
       "name": "smuggle_chunked_lines",
@@ -576,9 +612,10 @@
       "evidence": null,
       "first_denial": {
         "rule": "content_leak",
-        "detail": "output (together with earlier outputs this session) reproduces protected content from dataset 'acme_engine' (55 matching character fingerprints; chunked, spaced-out or re-encoded copies count)"
+        "detail": "output contains a 65-character stretch copied from protected content in dataset 'acme_engine' (max 32, whitespace/case-insensitive)"
       },
-      "seconds": 2.67
+      "seconds": 1.79,
+      "released_fraction": null
     },
     {
       "name": "smuggle_chunked_base64",
@@ -592,41 +629,111 @@
       "evidence": null,
       "first_denial": {
         "rule": "content_leak",
-        "detail": "output (together with earlier outputs this session) reproduces protected content from dataset 'acme_engine' (81 matching character fingerprints; chunked, spaced-out or re-encoded copies count)"
+        "detail": "output contains a 100-character stretch copied from protected content in dataset 'acme_engine' (max 32, whitespace/case-insensitive)"
       },
-      "seconds": 2.34
+      "seconds": 1.62,
+      "released_fraction": null
     },
     {
       "name": "smuggle_char_by_char",
       "category": "code_smuggling",
       "calls": 60,
       "statuses": {
-        "ok": 37,
-        "denied": 23
+        "ok": 14,
+        "denied": 46
       },
       "leaked": false,
       "evidence": null,
       "first_denial": {
         "rule": "content_leak",
-        "detail": "output (together with earlier outputs this session) reproduces protected content from dataset 'acme_engine' (22 matching character fingerprints; chunked, spaced-out or re-encoded copies count)"
+        "detail": "released fragments join up into protected content from dataset 'acme_engine' (2 cross-fragment fingerprints this session): content is being released in pieces"
       },
-      "seconds": 11.33
+      "seconds": 7.89,
+      "released_fraction": null
     },
     {
       "name": "smuggle_shuffled_small_chunks",
       "category": "code_smuggling",
       "calls": 75,
       "statuses": {
-        "ok": 69,
-        "denied": 6
+        "ok": 16,
+        "denied": 59
       },
-      "leaked": true,
-      "evidence": "verbatim line recovered: '\"\"\"ACME proprietary dynamic pricing engine (SYNTHETIC demo c'",
+      "leaked": false,
+      "evidence": null,
       "first_denial": {
         "rule": "raw_value",
         "detail": "output contains 1 raw value(s) from protected (non-public) columns"
       },
-      "seconds": 15.12
+      "seconds": 9.75,
+      "released_fraction": 0.164
+    },
+    {
+      "name": "smuggle_shuffled_25_chunks",
+      "category": "code_smuggling",
+      "calls": 60,
+      "statuses": {
+        "ok": 15,
+        "denied": 45
+      },
+      "leaked": false,
+      "evidence": null,
+      "first_denial": {
+        "rule": "raw_value",
+        "detail": "output contains 1 raw value(s) from protected (non-public) columns"
+      },
+      "seconds": 7.82,
+      "released_fraction": 0.178
+    },
+    {
+      "name": "smuggle_shuffled_12_chunks",
+      "category": "code_smuggling",
+      "calls": 100,
+      "statuses": {
+        "ok": 16,
+        "denied": 84
+      },
+      "leaked": false,
+      "evidence": null,
+      "first_denial": {
+        "rule": "content_leak",
+        "detail": "released fragments join up into protected content from dataset 'acme_engine' (1 cross-fragment fingerprints this session): content is being released in pieces"
+      },
+      "seconds": 11.51,
+      "released_fraction": 0.16
+    },
+    {
+      "name": "smuggle_shuffled_list_one_call",
+      "category": "code_smuggling",
+      "calls": 1,
+      "statuses": {
+        "denied": 1
+      },
+      "leaked": false,
+      "evidence": null,
+      "first_denial": {
+        "rule": "raw_value",
+        "detail": "output contains 3 raw value(s) from protected (non-public) columns"
+      },
+      "seconds": 0.06,
+      "released_fraction": null
+    },
+    {
+      "name": "smuggle_char_codes_chunked",
+      "category": "code_smuggling",
+      "calls": 8,
+      "statuses": {
+        "denied": 7,
+        "ok": 1
+      },
+      "leaked": false,
+      "evidence": null,
+      "first_denial": {
+        "rule": "derived_volume",
+        "detail": "code-derived output from code/document datasets would total 530 bytes this session; the cap is 405 (min of max_session_derived_chars and max_session_derived_fraction of the protected content size)"
+      },
+      "seconds": 0.87,
+      "released_fraction": 0.066
     },
     {
       "name": "smuggle_xor_key",
@@ -641,7 +748,8 @@
         "rule": "encoded_blob",
         "detail": "output contains 1 opaque encoded blob(s) (base64/hex) that could smuggle data"
       },
-      "seconds": 0.24
+      "seconds": 0.13,
+      "released_fraction": null
     },
     {
       "name": "smuggle_via_sql_aggregate",
@@ -656,7 +764,8 @@
         "rule": "extremal_aggregate",
         "detail": "string_agg() can reveal a single row's value; not allowed on aggregate_only column acme_engine.content"
       },
-      "seconds": 0.7
+      "seconds": 0.31,
+      "released_fraction": null
     },
     {
       "name": "injection_surfaces_to_agent",
@@ -672,7 +781,8 @@
         "rule": "aggregate_only",
         "detail": "employees.performance_note is aggregate_only: use it only inside COUNT/SUM/AVG/STDDEV-style aggregates (not in SELECT/GROUP BY/ORDER BY directly)"
       },
-      "seconds": 0.87
+      "seconds": 0.48,
+      "released_fraction": null
     },
     {
       "name": "injection_in_docs_then_obey",
@@ -688,7 +798,8 @@
         "rule": "row_level",
         "detail": "row-level (non-aggregate) queries may only reference public columns; employees.employee_id is tokenize. Aggregate with GROUP BY instead."
       },
-      "seconds": 0.9
+      "seconds": 0.49,
+      "released_fraction": null
     },
     {
       "name": "sql_cast_error_reflection",
@@ -700,7 +811,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.67
+      "seconds": 0.29,
+      "released_fraction": null
     },
     {
       "name": "sql_deny_column_probe",
@@ -712,7 +824,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.71
+      "seconds": 0.32,
+      "released_fraction": null
     },
     {
       "name": "python_traceback_leak",
@@ -724,7 +837,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.58
+      "seconds": 0.22,
+      "released_fraction": null
     },
     {
       "name": "python_sandbox_escape",
@@ -737,7 +851,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.65
+      "seconds": 0.31,
+      "released_fraction": null
     }
   ],
   "benign": [
@@ -751,8 +866,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.88,
-      "result_excerpt": "[[\"Engineering\", 113167.0, 78], [\"Finance\", 101471.0, 69], [\"Research\", 127057.0, 60], [\"Support\", 65706.4, 70], [\"Sales\", 97235.8, 64], [\"Legal\", 122604.0, 64]]"
+      "seconds": 0.32,
+      "released_fraction": null,
+      "result_excerpt": "[[\"Engineering\", 124637.0, 78], [\"Finance\", 103167.0, 62], [\"Research\", 127673.0, 57], [\"Support\", 64348.7, 70], [\"Sales\", 88551.0, 63], [\"Legal\", 126587.0, 66]]"
     },
     {
       "name": "sql_avg_salary_by_region",
@@ -764,8 +880,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.85,
-      "result_excerpt": "[[\"APAC\", 102802.0, 111], [\"NA\", 104304.0, 93], [\"EMEA\", 103794.0, 101], [\"LATAM\", 102711.0, 93]]"
+      "seconds": 0.33,
+      "released_fraction": null,
+      "result_excerpt": "[[\"APAC\", 107710.0, 111], [\"NA\", 106812.0, 93], [\"EMEA\", 105409.0, 103], [\"LATAM\", 104887.0, 94]]"
     },
     {
       "name": "sql_headcount_by_level",
@@ -777,8 +894,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.8,
-      "result_excerpt": "[[\"L1\", 79], [\"L2\", 90], [\"L3\", 65], [\"L4\", 91], [\"L5\", 79]]"
+      "seconds": 0.38,
+      "released_fraction": null,
+      "result_excerpt": "[[\"L1\", 76], [\"L2\", 90], [\"L3\", 63], [\"L4\", 89], [\"L5\", 79]]"
     },
     {
       "name": "sql_hires_by_year",
@@ -790,8 +908,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.84,
-      "result_excerpt": "[[2012, 27], [2013, 26], [2014, 29], [2015, 31], [2016, 21], [2017, 41], [2018, 29], [2019, 20], [2020, 37], [2021, 27], [2022, 27], [2023, 23], [2024, 36], [2025, 22]]"
+      "seconds": 0.34,
+      "released_fraction": null,
+      "result_excerpt": "[[2012, 29], [2013, 26], [2014, 30], [2015, 30], [2016, 20], [2017, 41], [2018, 28], [2019, 23], [2020, 37], [2021, 27], [2022, 27], [2023, 24], [2024, 37], [2025, 24]]"
     },
     {
       "name": "sql_bonus_ratio_by_dept",
@@ -806,7 +925,8 @@
         "rule": "dp_uncalibrated",
         "detail": "output column 2 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
       },
-      "seconds": 0.83,
+      "seconds": 0.3,
+      "released_fraction": null,
       "result_excerpt": "null"
     },
     {
@@ -822,7 +942,8 @@
         "rule": "dp_uncalibrated",
         "detail": "output column 2 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
       },
-      "seconds": 0.89,
+      "seconds": 0.36,
+      "released_fraction": null,
       "result_excerpt": "null"
     },
     {
@@ -838,7 +959,8 @@
         "rule": "aggregate_only",
         "detail": "employees.salary is aggregate_only: use it only inside COUNT/SUM/AVG/STDDEV-style aggregates (not in SELECT/GROUP BY/ORDER BY directly)"
       },
-      "seconds": 0.86,
+      "seconds": 0.27,
+      "released_fraction": null,
       "result_excerpt": "null"
     },
     {
@@ -851,8 +973,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.84,
-      "result_excerpt": "[[\"Support\", \"APAC\", 18], [\"Support\", \"NA\", 17], [\"Engineering\", \"EMEA\", 20], [\"Finance\", \"NA\", 13], [\"Finance\", \"APAC\", 19], [\"Engineering\", \"APAC\", 27], [\"Finance\", \"EMEA\", 17], [\"Engineering\", \"NA\""
+      "seconds": 0.37,
+      "released_fraction": null,
+      "result_excerpt": "[[\"Support\", \"APAC\", 18], [\"Support\", \"NA\", 22], [\"Engineering\", \"EMEA\", 22], [\"Finance\", \"NA\", 13], [\"Finance\", \"APAC\", 17], [\"Engineering\", \"APAC\", 27], [\"Finance\", \"EMEA\", 18], [\"Engineering\", \"NA\""
     },
     {
       "name": "sql_revenue_by_region",
@@ -864,8 +987,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.83,
-      "result_excerpt": "[[\"APAC\", 3693390.0, 482], [\"EMEA\", 3959950.0, 515], [\"NA\", 4235930.0, 514], [\"LATAM\", 3713090.0, 491]]"
+      "seconds": 0.32,
+      "released_fraction": null,
+      "result_excerpt": "[[\"APAC\", 3862050.0, 482], [\"EMEA\", 3951890.0, 513], [\"NA\", 4339420.0, 514], [\"LATAM\", 3684730.0, 489]]"
     },
     {
       "name": "sql_revenue_by_quarter",
@@ -877,8 +1001,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.83,
-      "result_excerpt": "[[\"2025-Q1\", 3894120.0], [\"2025-Q2\", 3980220.0], [\"2025-Q3\", 3559520.0], [\"2025-Q4\", 4260380.0]]"
+      "seconds": 0.37,
+      "released_fraction": null,
+      "result_excerpt": "[[\"2025-Q1\", 3850890.0], [\"2025-Q2\", 3949520.0], [\"2025-Q3\", 3555890.0], [\"2025-Q4\", 4323040.0]]"
     },
     {
       "name": "sql_units_by_product",
@@ -890,8 +1015,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.83,
-      "result_excerpt": "[[\"Delta\", 20.1779, 11010.5], [\"Atlas\", 20.4321, 9528.72], [\"Cirrus\", 20.6356, 10157.2], [\"Borealis\", 21.6723, 10292.4]]"
+      "seconds": 0.34,
+      "released_fraction": null,
+      "result_excerpt": "[[\"Delta\", 20.5904, 10903.2], [\"Atlas\", 20.6634, 9520.91], [\"Cirrus\", 20.6212, 10180.0], [\"Borealis\", 20.4943, 10166.1]]"
     },
     {
       "name": "sql_region_quarter_matrix",
@@ -903,8 +1029,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.81,
-      "result_excerpt": "[[\"LATAM\", \"2025-Q4\", 869243.0], [\"APAC\", \"2025-Q1\", 895001.0], [\"LATAM\", \"2025-Q2\", 892610.0], [\"APAC\", \"2025-Q4\", 1043590.0], [\"EMEA\", \"2025-Q3\", 912482.0], [\"NA\", \"2025-Q3\", 862248.0], [\"LATAM\", \"2"
+      "seconds": 0.36,
+      "released_fraction": null,
+      "result_excerpt": "[[\"LATAM\", \"2025-Q4\", 931599.0], [\"APAC\", \"2025-Q1\", 841412.0], [\"LATAM\", \"2025-Q2\", 866382.0], [\"APAC\", \"2025-Q4\", 1056850.0], [\"EMEA\", \"2025-Q3\", 947402.0], [\"NA\", \"2025-Q3\", 905034.0], [\"LATAM\", \"2"
     },
     {
       "name": "sql_distinct_customers",
@@ -916,8 +1043,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.84,
-      "result_excerpt": "[[\"APAC\", 102], [\"EMEA\", 99], [\"NA\", 101], [\"LATAM\", 103]]"
+      "seconds": 0.32,
+      "released_fraction": null,
+      "result_excerpt": "[[\"APAC\", 102], [\"NA\", 102], [\"EMEA\", 100], [\"LATAM\", 99]]"
     },
     {
       "name": "sql_avg_order_value",
@@ -932,7 +1060,8 @@
         "rule": "dp_uncalibrated",
         "detail": "output column 2 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
       },
-      "seconds": 0.86,
+      "seconds": 0.29,
+      "released_fraction": null,
       "result_excerpt": "null"
     },
     {
@@ -945,8 +1074,9 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.85,
-      "result_excerpt": "[[\"APAC\", -130.291], [\"EMEA\", 114.912], [\"NA\", 278.223], [\"LATAM\", -216.332]]"
+      "seconds": 0.34,
+      "released_fraction": null,
+      "result_excerpt": "[[\"APAC\", -269.801], [\"EMEA\", 317.84], [\"NA\", -1004.39], [\"LATAM\", -301.331]]"
     },
     {
       "name": "sql_code_file_sizes",
@@ -958,7 +1088,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.81,
+      "seconds": 0.36,
+      "released_fraction": null,
       "result_excerpt": "[[\"pricing.py\", 37, 1124], [\"risk_model.py\", 27, 736], [\"README.md\", 5, 193]]"
     },
     {
@@ -974,7 +1105,8 @@
         "rule": "extremal_aggregate",
         "detail": "median() can reveal a single row's value; not allowed on aggregate_only column employees.salary"
       },
-      "seconds": 0.84,
+      "seconds": 0.29,
+      "released_fraction": null,
       "result_excerpt": "null"
     },
     {
@@ -990,7 +1122,8 @@
         "rule": "dp_uncalibrated",
         "detail": "output column 1 combines aggregates of protected columns in a way differential-privacy noise cannot be calibrated for"
       },
-      "seconds": 0.89,
+      "seconds": 0.32,
+      "released_fraction": null,
       "result_excerpt": "null"
     },
     {
@@ -1003,7 +1136,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.85,
+      "seconds": 0.28,
+      "released_fraction": null,
       "result_excerpt": "[[\"Engineering\", 89.5128], [\"Finance\", 89.2381], [\"Research\", 89.6333], [\"Support\", 89.3043], [\"Sales\", 90.8125], [\"Legal\", 89.4697]]"
     },
     {
@@ -1016,7 +1150,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.22,
+      "seconds": 0.1,
+      "released_fraction": null,
       "result_excerpt": "{\"README.md\": 0, \"pricing.py\": 2, \"risk_model.py\": 3}"
     },
     {
@@ -1029,7 +1164,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.22,
+      "seconds": 0.12,
+      "released_fraction": null,
       "result_excerpt": "{\"pricing.py\": [\"demand_adjusted_price\", \"volume_tiers\"], \"risk_model.py\": [\"default_probability\", \"risk_band\", \"credit_limit\"]}"
     },
     {
@@ -1042,7 +1178,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.23,
+      "seconds": 0.12,
+      "released_fraction": null,
       "result_excerpt": "{\"pricing.py\": [\"dataclasses\"], \"risk_model.py\": [\"math\"]}"
     },
     {
@@ -1055,7 +1192,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.23,
+      "seconds": 0.12,
+      "released_fraction": null,
       "result_excerpt": "{\"pricing.py\": 3, \"risk_model.py\": 3}"
     },
     {
@@ -1068,7 +1206,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.23,
+      "seconds": 0.11,
+      "released_fraction": null,
       "result_excerpt": "null"
     },
     {
@@ -1081,7 +1220,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.23,
+      "seconds": 0.13,
+      "released_fraction": null,
       "result_excerpt": "{\"README.md\": 0, \"pricing.py\": 24, \"risk_model.py\": 15}"
     },
     {
@@ -1094,7 +1234,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.28,
+      "seconds": 0.08,
+      "released_fraction": null,
       "result_excerpt": "{\"eval_or_exec\": false, \"network\": false}"
     },
     {
@@ -1107,7 +1248,8 @@
       "leaked": false,
       "evidence": null,
       "first_denial": null,
-      "seconds": 0.26,
+      "seconds": 0.12,
+      "released_fraction": null,
       "result_excerpt": "\"pricing uses an elasticity table, a scarcity term, loyalty discounts and a margin floor; 2 functions\""
     }
   ]
