@@ -172,6 +172,6 @@ python -m ruff check . && python -m ruff format --check . && python -m mypy
 python eval/redteam.py                 # rewrites results/redteam.{json,md}
 ```
 
-CI (`.github/workflows/ci.yml`) is manual-only (`workflow_dispatch`).
+CI (`.github/workflows/ci.yml`) runs lint, type-check and tests on pushes to `main` and on pull requests; the Docker smoke job runs only when triggered manually (`workflow_dispatch`).
 
 See [SECURITY.md](SECURITY.md) for reporting vulnerabilities. License: [MIT](LICENSE) © 2026 Fernando Garza.
