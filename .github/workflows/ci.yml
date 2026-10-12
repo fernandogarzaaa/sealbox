@@ -1,7 +1,11 @@
-# Manual only: run from the Actions tab ("Run workflow"). No push/PR triggers on purpose.
+# Lint/type/test gate pushes to main and every pull request. The docker smoke
+# job stays manual: run it from the Actions tab ("Run workflow").
 name: ci
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -30,6 +34,7 @@ jobs:
         run: python -m pytest -q --cov=sealbox --cov-report=term
 
   docker:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
